@@ -359,8 +359,8 @@ inline static bool Rightward_Evaluate_Nonvoid_Into_Out_Throws(
     SHORTHAND (next, f->feed->value, NEVERNULL(const RELVAL*));
     SHORTHAND (specifier, f->feed->specifier, REBSPC*);
 
-    if (GET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT))  { // e.g. `10 -> x:`
-        CLEAR_EVAL_FLAG(f, NEXT_ARG_FROM_OUT);
+    if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT))  {  // e.g. `10 -> x:`
+        CLEAR_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
         CLEAR_CELL_FLAG(f->out, UNEVALUATED);  // this helper counts as eval
         return false;
     }
@@ -430,7 +430,6 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
         EVAL_FLAG_POST_SWITCH
         | EVAL_FLAG_PROCESS_ACTION
         | EVAL_FLAG_REEVALUATE_CELL
-        | EVAL_FLAG_NEXT_ARG_FROM_OUT
         | EVAL_FLAG_FULFILL_ONLY  // can be requested or <blank> can trigger
         | EVAL_FLAG_RUNNING_ENFIX  // can be requested with REEVALUATE_CELL
         | EVAL_FLAG_TOOK_HOLD  // can be set by va_list reification
@@ -536,7 +535,7 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
             goto return_thrown;
     }
 
-    assert(NOT_EVAL_FLAG(f, NEXT_ARG_FROM_OUT));
+    assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
     SET_CELL_FLAG(f->out, OUT_MARKED_STALE);  // internal use flag only
 
     UPDATE_EXPRESSION_START(f); // !!! See FRM_INDEX() for caveats
@@ -655,8 +654,8 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
         v = &f->feed->lookback;
         gotten = nullptr;
 
-        SET_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH); // for better error message
-        SET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT); // literal right op is arg
+        SET_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH);  // for better error message
+        SET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);  // literal right op is arg
 
         goto give_up_backward_quote_priority; // run PATH!/WORD! normal
     }
@@ -736,7 +735,7 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
         // a new frame, but has to run the `=` as "getting its next arg from
         // the output slot, but not being run in an enfix mode".
         //
-        if (NOT_EVAL_FLAG(f, NEXT_ARG_FROM_OUT))
+        if (NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT))
             Expire_Out_Cell_Unless_Invisible(f);
 
         goto process_action; }
@@ -1030,8 +1029,8 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
 
     //=//// HANDLE IF NEXT ARG IS IN OUT SLOT (e.g. ENFIX, CHAIN) /////////=//
 
-            if (GET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT)) {
-                CLEAR_EVAL_FLAG(f, NEXT_ARG_FROM_OUT);
+            if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)) {
+                CLEAR_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
 
                 if (GET_CELL_FLAG(f->out, OUT_MARKED_STALE)) {
                     //
@@ -1539,7 +1538,7 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
     //
     //==////////////////////////////////////////////////////////////////==//
 
-        if (GET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT)) {
+        if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)) {
             if (GET_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH))
                 fail (Error_Literal_Left_Path_Raw());
         }
@@ -1552,9 +1551,9 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
         // can be useful as a convenience way of saying "takes the left hand
         // argument but ignores it" (e.g. with skippable args).  Allow it.
         //
-        if (GET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT)) {
+        if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)) {
             assert(GET_EVAL_FLAG(f, RUNNING_ENFIX));
-            CLEAR_EVAL_FLAG(f, NEXT_ARG_FROM_OUT);
+            CLEAR_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
         }
 
         assert(IS_END(f->param));
@@ -1782,8 +1781,8 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
             // happen, trying it out of curiosity for now.
             //
             Begin_Prefix_Action(f, opt_label);
-            assert(NOT_EVAL_FLAG(f, NEXT_ARG_FROM_OUT));
-            SET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT);
+            assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
+            SET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
 
             goto process_action;
         }
@@ -1965,7 +1964,9 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
             break;
         }
 
-        REBVAL *where = GET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT) ? spare : f->out;
+        REBVAL *where = GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)
+            ? spare
+            : f->out;
 
         REBSTR *opt_label;
         if (Eval_Path_Throws_Core(
@@ -2183,8 +2184,8 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
             Begin_Prefix_Action(f, nullptr);  // no label
 
             kind.byte = REB_ACTION;
-            assert(NOT_EVAL_FLAG(f, NEXT_ARG_FROM_OUT));
-            SET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT);
+            assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
+            SET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
 
             goto process_action;
         }
@@ -2279,7 +2280,7 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
 // a faster native version that would require rewiring the evaluator somewhat.
 
       case REB_SET_BLOCK: {
-        assert(NOT_EVAL_FLAG(f, NEXT_ARG_FROM_OUT));
+        assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
 
         if (VAL_LEN_AT(v) == 0)
             fail ("SET-BLOCK! must not be empty for now.");
@@ -2560,7 +2561,7 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
     // opportunity to quote left because it has no argument...and instead
     // retriggers and lets x run.
 
-    if (GET_EVAL_FLAG(f, NEXT_ARG_FROM_OUT)) {
+    if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)) {
         if (GET_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH))
             fail (Error_Literal_Left_Path_Raw());
 
@@ -2779,7 +2780,7 @@ bool Eval_Internal_Maybe_Stale_Throws(REBFRM * const f)
     //     o/f left-lit  ; want error suggesting -> here, need flag for that
     //
     CLEAR_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH);
-    assert(NOT_EVAL_FLAG(f, NEXT_ARG_FROM_OUT));  // must be consumed
+    assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));  // must be consumed
 
   #if !defined(NDEBUG)
     Eval_Core_Exit_Checks_Debug(f);  // called unless a fail() longjmps
