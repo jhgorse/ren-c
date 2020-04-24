@@ -473,17 +473,17 @@ bool Eval_Path_Throws_Core(
         }
     }
 
-  return_not_thrown:;
+  return_not_thrown:
     if (label_out)
         *label_out = pvs->opt_label;
 
+    assert(not Is_Throwing(pvs));
     Abort_Frame(pvs);
-    assert(not Is_Evaluator_Throwing_Debug());
     return false; // not thrown
 
-  return_thrown:;
+  return_thrown:
+    assert(Is_Throwing(pvs));
     Abort_Frame(pvs);
-    assert(Is_Evaluator_Throwing_Debug());
     return true; // thrown
 }
 
