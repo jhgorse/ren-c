@@ -1714,7 +1714,7 @@ bool Eval_Internal_Maybe_Stale_Throws(void)
                 bool threw = RunQ_Throws(
                     f->out,
                     false,  // !fully, arity-0 functions can ignore condition
-                    rebU1(KNOWN(f->u.cont.branch)),
+                    rebU(SPECIFIC(f->u.cont.branch)),
                     f->u.cont.with,  // END marker, if not CONTINUE_WITH()
                     rebEND  // ...if `with` wasn't an END marker, need one
                 );
