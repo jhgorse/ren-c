@@ -62,6 +62,9 @@ STATIC_ASSERT(EVAL_FLAG_0_IS_TRUE == NODE_FLAG_NODE);
 #define EVAL_FLAG_1_IS_FALSE FLAG_LEFT_BIT(1) // is NOT free
 STATIC_ASSERT(EVAL_FLAG_1_IS_FALSE == NODE_FLAG_FREE);
 
+#define EVAL_FLAG_7_IS_TRUE FLAG_LEFT_BIT(7)  // !!! Temporary...claims CELL
+STATIC_ASSERT(EVAL_FLAG_7_IS_TRUE == NODE_FLAG_CELL);
+
 
 //=//// EVAL_FLAG_DISPATCHER_CATCHES //////////////////////////////////////=//
 //
@@ -120,8 +123,6 @@ STATIC_ASSERT(EVAL_FLAG_1_IS_FALSE == NODE_FLAG_FREE);
     FLAG_LEFT_BIT(6)
 
 
-#define EVAL_FLAG_7_IS_FALSE FLAG_LEFT_BIT(7) // is NOT a cell
-STATIC_ASSERT(EVAL_FLAG_7_IS_FALSE == NODE_FLAG_CELL);
 
 
 //=//// BITS 8-15 ARE 0 FOR END SIGNAL ////////////////////////////////////=//
@@ -406,7 +407,13 @@ STATIC_ASSERT(EVAL_FLAG_7_IS_FALSE == NODE_FLAG_CELL);
     FLAG_LEFT_BIT(31)
 
 
-STATIC_ASSERT(31 < 32); // otherwise EVAL_FLAG_XXX too high
+STATIC_ASSERT(31 < 32);  // otherwise EVAL_FLAG_XXX too high
+
+
+// Default for Eval_Core_May_Throw() is just a single EVALUATE step.
+//
+#define EVAL_MASK_DEFAULT \
+    (EVAL_FLAG_0_IS_TRUE | EVAL_FLAG_7_IS_TRUE)
 
 
 #define SET_EVAL_FLAG(f,name) \

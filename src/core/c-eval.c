@@ -2180,7 +2180,7 @@ bool Eval_Internal_Maybe_Stale_Throws(void)
             VAL_INDEX(v),
             Derive_Specifier(f_specifier, v),
             nullptr,  // `setval`: null means don't treat as SET-PATH!
-            EVAL_FLAG_PUSH_PATH_REFINES
+            EVAL_MASK_DEFAULT | EVAL_FLAG_PUSH_PATH_REFINES
         )){
             if (where != f->out)
                 Move_Value(f->out, where);
