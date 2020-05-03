@@ -1635,7 +1635,6 @@ REB_R Eval_Post_Switch(REBFRM *f)
     Begin_Enfix_Action(f, VAL_WORD_SPELLING(f_next));
 
     Fetch_Next_Forget_Lookback(f);  // advances next
-  process_action:
     return R_CONTINUATION;
 
 
