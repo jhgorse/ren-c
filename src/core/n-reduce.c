@@ -154,7 +154,7 @@ REBNATIVE(reduce2)
             //
             Move_Value(D_SPARE, v);
             Quotify(D_SPARE, 1);  // !!! DELEGATE_WITH doesn't suppress eval
-            DELEGATE_WITH (NAT_VALUE(reeval), v);
+            DELEGATE_WITH (NATIVE_VAL(reeval), v);
         }
 
         DECLARE_FRAME_AT (
