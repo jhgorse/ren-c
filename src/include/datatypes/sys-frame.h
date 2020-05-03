@@ -363,6 +363,7 @@ inline static void Push_Frame_No_Varlist(REBVAL *out, REBFRM *f)
         | EVAL_FLAG_REEVALUATE_CELL
         | EVAL_FLAG_FULFILL_ONLY  // can be requested or <blank> can trigger
         | EVAL_FLAG_RUNNING_ENFIX  // can be requested with REEVALUATE_CELL
+        | EVAL_FLAG_TOOK_HOLD  // may be set, or va_list reification may set
     );  // should be unchanged on exit
   #endif
 

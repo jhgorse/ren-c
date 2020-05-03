@@ -797,7 +797,7 @@ struct Reb_Frame {
     // Used to slip cell to re-evaluate into Eval_Core()
     //
     struct {
-        const REBVAL *value;
+        const RELVAL *value;
     } reval;
 
     // Used to parameterize REB_R_CONTINUATION.
