@@ -1136,7 +1136,6 @@ REB_R Eval_Action(REBFRM *f, REB_R mode)
     f->flags.bits &= ~(
         EVAL_FLAG_DELEGATE_CONTROL
         | EVAL_FLAG_DISPATCHER_CATCHES
-        | EVAL_FLAG_PUSH_TO_STACK
     );
 
     const REBVAL *r = (*PG_Dispatch)(f);  // default just calls FRM_PHASE
