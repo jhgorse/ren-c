@@ -1361,7 +1361,9 @@ REB_R Eval_Action(REBFRM *f)
         }
     }
 
-    return nullptr;
+    Drop_Action(f);
+    SET_EVAL_FLAG(f, POST_SWITCH);
+    return R_CONTINUATION;
 
 
   action_threw:
