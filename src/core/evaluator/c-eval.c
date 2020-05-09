@@ -499,14 +499,11 @@ REB_R Reevaluation_Executor(REBFRM *f)
 
     // Wasn't the at-end exception, so run normal enfix with right winning.
 
- blockscope {
-    DECLARE_FRAME (subframe, f->feed, f->flags.bits & ~(EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_TOOK_HOLD));
-    Push_Frame(f->out, subframe);
-    Push_Action(subframe, VAL_ACTION(gotten), VAL_BINDING(gotten));
-    Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(v));
+    Push_Action(f, VAL_ACTION(gotten), VAL_BINDING(gotten));
+    Begin_Enfix_Action(f, VAL_WORD_SPELLING(v));
 
     kind.byte = REB_ACTION;  // for consistency in the UNEVALUATED check
-    goto process_action; }
+    goto process_action;
 
   give_up_backward_quote_priority:
 
@@ -568,35 +565,20 @@ REB_R Reevaluation_Executor(REBFRM *f)
       case REB_ACTION: {
         REBSTR *opt_label = nullptr;  // not run from WORD!/PATH!, "nameless"
 
-        DECLARE_FRAME (subframe, f->feed, f->flags.bits & ~(EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_TOOK_HOLD));
-        Push_Frame(f->out, subframe);
-        Push_Action(subframe, VAL_ACTION(v), VAL_BINDING(v));
-        Begin_Prefix_Action(subframe, opt_label);
+        Push_Action(f, VAL_ACTION(v), VAL_BINDING(v));
+        Begin_Prefix_Action(f, opt_label);
 
         // We'd like `10 -> = 5 + 5` to work, and to do so it reevaluates in
         // a new frame, but has to run the `=` as "getting its next arg from
         // the output slot, but not being run in an enfix mode".
         //
         if (NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT))
-            Expire_Out_Cell_Unless_Invisible(subframe);
+            Expire_Out_Cell_Unless_Invisible(f);
 
         goto process_action; }
 
-      process_action: {  // Note: Also jumped to by the redo_checked code
-        //
-        // !!! Originally, there was no such thing as identity for a FRAME!
-        // that wasn't running a function.  Now we give functions their own
-        // frames so that the identities are separate.  This may be wasteful
-        // in the case of simple argument fulfillment, but is needed when
-        // the parent frame represents evaluation across a block to an end...
-        // as routines like REDUCE need to hold onto a notion of those frames.
-        //
-        // !!! Right now, the default behavior after a frame returns f->out
-        // is to jump up and call the eval post switch.
-        //
-        INIT_F_EXECUTOR(f, &Lookahead_Executor);
+      process_action:  // Note: Also jumped to by the redo_checked code
         return R_CONTINUATION;
-      }
 
 
 //==//// WORD! ///////////////////////////////////////////////////////////==//
@@ -633,11 +615,9 @@ REB_R Reevaluation_Executor(REBFRM *f)
                 }
             }
 
-            DECLARE_FRAME (subframe, f->feed, f->flags.bits & ~(EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_TOOK_HOLD));
-            Push_Frame(f->out, subframe);
-            Push_Action(subframe, act, VAL_BINDING(gotten));
+            Push_Action(f, act, VAL_BINDING(gotten));
             Begin_Action_Core(
-                subframe,
+                f,
                 VAL_WORD_SPELLING(v),  // use word as label
                 GET_ACTION_FLAG(act, ENFIXED)
             );
@@ -786,20 +766,11 @@ REB_R Reevaluation_Executor(REBFRM *f)
             if (GET_ACTION_FLAG(act, IS_INVISIBLE))
                 fail ("Use `<-` with invisibles fetched from PATH!");
 
-            DECLARE_FRAME (subframe, f->feed, f->flags.bits & ~(EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_TOOK_HOLD));
-            Push_Frame(f->out, subframe);
+            Push_Action(f, VAL_ACTION(where), VAL_BINDING(where));
+            Begin_Prefix_Action(f, opt_label);
 
-            // !!! The refinements were pushed in the `f` frame but we want
-            // subframe to see the same stack marker.  Extremely inelegant,
-            // rethink things if this ever works.
-            //
-            subframe->dsp_orig = f->dsp_orig;
-
-            Push_Action(subframe, VAL_ACTION(where), VAL_BINDING(where));
-            Begin_Prefix_Action(subframe, opt_label);
-
-            if (where == subframe->out)
-                Expire_Out_Cell_Unless_Invisible(subframe);
+            if (where == f->out)
+                Expire_Out_Cell_Unless_Invisible(f);
 
             goto process_action;
         }
@@ -974,10 +945,8 @@ REB_R Reevaluation_Executor(REBFRM *f)
             // should also be restricted to a single value...though it's
             // being experimented with letting it take more.)
             //
-            DECLARE_FRAME (subframe, f->feed, f->flags.bits & ~(EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_TOOK_HOLD));
-            Push_Frame(f->out, subframe);
-            Push_Action(subframe, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
-            Begin_Prefix_Action(subframe, nullptr);  // no label
+            Push_Action(f, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
+            Begin_Prefix_Action(f, nullptr);  // no label
 
             kind.byte = REB_ACTION;
             assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
@@ -1574,15 +1543,12 @@ REB_R Lookahead_Executor(REBFRM *f)
     // of parameter fulfillment.  We want to reuse the f->out value and get it
     // into the new function's frame.
 
-  blockscope {
-    DECLARE_FRAME (subframe, f->feed, f->flags.bits & ~(EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_TOOK_HOLD));
-    Push_Frame(f->out, subframe);
-    Push_Action(subframe, VAL_ACTION(f_next_gotten), VAL_BINDING(f_next_gotten));
-    Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(f_next));
+    Push_Action(f, VAL_ACTION(f_next_gotten), VAL_BINDING(f_next_gotten));
+    Begin_Enfix_Action(f, VAL_WORD_SPELLING(f_next));
 
-    Fetch_Next_Forget_Lookback(subframe);  // advances next
+    Fetch_Next_Forget_Lookback(f);  // advances next
+
     return R_CONTINUATION;
-  }
 
   finished:
     if (GET_EVAL_FLAG(f, TO_END) and NOT_END(f->feed->value))
