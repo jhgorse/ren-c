@@ -92,6 +92,7 @@ bool Eval_Internal_Maybe_Stale_Throws(void)
 
     if (F->executor == nullptr) {  // no further execution for frame, drop it
         assert(r == F->out);
+        CLEAR_CELL_FLAG(F->out, OUT_MARKED_STALE);  // !!! review
 
         // !!! Currently we do not drop the topmost frame, because some code
         // (e.g. MATCH) would ask for a frame to be filled, and then steal
@@ -159,8 +160,6 @@ bool Eval_Internal_Maybe_Stale_Throws(void)
         //    (F->flags.bits & ~EVAL_FLAG_TOOK_HOLD) == F->initial_flags
         //);  // changes should be restored, va_list reification may take hold
         #endif
-
-        CLEAR_CELL_FLAG(F->out, OUT_MARKED_STALE);  // !!! review
 
         // We now are at the frame above the one that made the last
         // request.  What we need to know is if it wanted to do any
