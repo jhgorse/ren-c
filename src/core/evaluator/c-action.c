@@ -107,13 +107,7 @@ inline static void Finalize_Arg(REBFRM *f) {
     }
 
   #if defined(DEBUG_STALE_ARGS)  // see notes on flag definition
-    //
-    // !!! Stackless threw a wrench into how OUT_MARKED_STALE was handled, and
-    // it's not really clear when a good time to clear it is.  The question
-    // is under review; but at the moment it may still be set when this point
-    // gets reached.
-    //
-    /* assert(NOT_CELL_FLAG(f->arg, ARG_MARKED_CHECKED)); */
+    assert(NOT_CELL_FLAG(f->arg, ARG_MARKED_CHECKED));
   #endif
 
     if (
@@ -1079,6 +1073,7 @@ REB_R Action_Executor(REBFRM *f)
         if (r == R_INVISIBLE)
             goto finalize_arg;
         assert(r == R_CONTINUATION);
+        assert(not IS_POINTER_TRASH_DEBUG(FS_TOP->executor));
         return R_CONTINUATION;
       }
     }
@@ -1143,6 +1138,7 @@ REB_R Action_Executor(REBFRM *f)
         if (r == R_INVISIBLE)
             goto finalize_arg;
         assert(r == R_CONTINUATION);
+        assert(not IS_POINTER_TRASH_DEBUG(FS_TOP->executor));
         return R_CONTINUATION;
       }
     }
