@@ -1202,6 +1202,7 @@ REB_R Action_Executor(REBFRM *f)
     // means of tracking extra state information?
     //
     SET_END(f_spare);
+    STATE_BYTE(f) = 0;  // reset to zero for each phase
 
     f_next_gotten = nullptr;  // arbitrary code changes fetched variables
 

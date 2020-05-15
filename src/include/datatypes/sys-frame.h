@@ -144,6 +144,16 @@ inline static int FRM_LINE(REBFRM *f) {
 #define F_SPECIFIER(f) \
     ((f)->feed->specifier)
 
+
+#if !defined(__cplusplus)
+    #define STATE_BYTE(f) \
+        mutable_SECOND_BYTE((f)->flags)
+#else
+    inline static REBYTE& STATE_BYTE(REBFRM *f)
+      { return mutable_SECOND_BYTE(f->flags); }
+#endif
+
+
 inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
 {
     if (f->original)
@@ -396,7 +406,7 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
     //
     if (IS_END(f->feed->value)) {  // don't take hold on empty feeds
         assert(IS_POINTER_TRASH_DEBUG(f->feed->pending));
-        assert(NOT_EVAL_FLAG(f, TOOK_HOLD));
+        assert(not f->took_hold);
     }
     else if (FRM_IS_VARIADIC(f)) {
         //
@@ -405,14 +415,14 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
         // which is created will have a hold put on it to be released when
         // the frame is finished.
         //
-        assert(NOT_EVAL_FLAG(f, TOOK_HOLD));
+        assert(not f->took_hold);
     }
     else {
         if (GET_SERIES_INFO(f->feed->array, HOLD))
             NOOP; // already temp-locked
         else {
             SET_SERIES_INFO(f->feed->array, HOLD);
-            SET_EVAL_FLAG(f, TOOK_HOLD);
+            f->took_hold = true;
         }
     }
 
@@ -422,7 +432,7 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
   #endif
 
   #if !defined(NDEBUG)
-    f->initial_flags = f->flags.bits & ~EVAL_FLAG_TOOK_HOLD;
+    f->initial_flags = f->flags.bits;
   #endif
 
     assert(f->varlist == nullptr);  // !!! Is this always true?
@@ -447,7 +457,7 @@ inline static void Abort_Frame(REBFRM *f) {
         goto pop;
 
     if (FRM_IS_VARIADIC(f)) {
-        assert(NOT_EVAL_FLAG(f, TOOK_HOLD));
+        assert(not f->took_hold);
 
         // Aborting valist frames is done by just feeding all the values
         // through until the end.  This is assumed to do any work, such
@@ -472,14 +482,14 @@ inline static void Abort_Frame(REBFRM *f) {
             Fetch_Next_Forget_Lookback(f);
     }
     else {
-        if (GET_EVAL_FLAG(f, TOOK_HOLD)) {
+        if (f->took_hold) {
             //
             // The frame was either never variadic, or it was but got spooled
             // into an array by Reify_Va_To_Array_In_Frame()
             //
             assert(GET_SERIES_INFO(f->feed->array, HOLD));
             CLEAR_SERIES_INFO(f->feed->array, HOLD);
-            CLEAR_EVAL_FLAG(f, TOOK_HOLD); // !!! needed?
+            f->took_hold = false; // !!! needed?
         }
     }
 
@@ -499,10 +509,10 @@ inline static void Drop_Frame_Core(REBFRM *f) {
     free(f->stress);
   #endif
 
-    if (GET_EVAL_FLAG(f, TOOK_HOLD)) {
+    if (f->took_hold) {
         assert(GET_SERIES_INFO(f->feed->array, HOLD));
         CLEAR_SERIES_INFO(f->feed->array, HOLD);
-        CLEAR_EVAL_FLAG(f, TOOK_HOLD);  // needed?
+        f->took_hold = false;  // needed?
     }
 
     assert(TG_Top_Frame == f);
@@ -560,6 +570,8 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
   #ifdef DEBUG_ENSURE_FRAME_EVALUATES
     f->was_eval_called = false;
   #endif
+
+    f->took_hold = false;  // !!! Maybe should be an EVAL_FLAG, see notes
 }
 
 #define DECLARE_FRAME(name,feed,flags) \
@@ -931,10 +943,11 @@ inline static void Drop_Dummy_Frame_Unbalanced(REBFRM *f) {
 // Quick access functions from natives (or compatible functions that name a
 // Reb_Frame pointer `frame_`) to get some of the common public fields.
 //
-#define D_FRAME     frame_
-#define D_OUT       FRM_OUT(frame_)         // GC-safe slot for output value
-#define D_SPARE     FRM_SPARE(frame_)       // scratch GC-safe cell
-#define D_THROWING  Is_Throwing(frame_)     // check continuation throw state
+#define D_FRAME         frame_
+#define D_OUT           FRM_OUT(frame_)         // GC-safe slot for output
+#define D_SPARE         FRM_SPARE(frame_)       // scratch GC-safe cell
+#define D_THROWING      Is_Throwing(frame_)     // check continuation throw
+#define D_STATE_BYTE    STATE_BYTE(frame_)      // eval byte (defaults 0)
 
 // !!! Numbered arguments got more complicated with the idea of moving the
 // definitional returns into the first slot (if applicable).  This makes it
