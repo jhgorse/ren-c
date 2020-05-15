@@ -172,7 +172,7 @@ REB_R Yielder_Dispatcher(REBFRM *f)
         // Note special trick used to encode END inside an array by means of
         // using the hidden identity of the details array itself.
         //
-        REBVAL *out_copy = KNOWN(ARR_AT(details, IDX_YIELDER_OUT));
+        REBVAL *out_copy = SPECIFIC(ARR_AT(details, IDX_YIELDER_OUT));
         if (
             KIND_BYTE_UNCHECKED(out_copy) == REB_BLOCK
             and VAL_ARRAY(out_copy) == details
@@ -190,14 +190,14 @@ REB_R Yielder_Dispatcher(REBFRM *f)
         //
         Move_Value(
             yield_frame->out,
-            KNOWN(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT))
+            SPECIFIC(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT))
         );
 
         // Now add in all the data stack elements.
         //
-        RELVAL *data_stack = KNOWN(ARR_AT(details, IDX_YIELDER_DATA_STACK));
+        RELVAL *data_stack = SPECIFIC(ARR_AT(details, IDX_YIELDER_DATA_STACK));
         assert(VAL_INDEX(data_stack) == 0);  // could store some number (?)
-        REBVAL *stack_item = KNOWN(VAL_ARRAY_HEAD(data_stack));
+        REBVAL *stack_item = SPECIFIC(VAL_ARRAY_HEAD(data_stack));
         for (; NOT_END(stack_item); ++stack_item)
             Move_Value(DS_PUSH(), stack_item);
         Init_Blank(data_stack);  // no longer needed, let it be GC'd
@@ -364,7 +364,7 @@ REBNATIVE(yield)
     // of that evaluative product.  It must be preserved.  But since we can't
     // put END values in blocks, use the hidden block to indicate that
     //
-    REBVAL *out_copy = KNOWN(ARR_AT(yielder_details, IDX_YIELDER_OUT));
+    REBVAL *out_copy = SPECIFIC(ARR_AT(yielder_details, IDX_YIELDER_OUT));
     if (IS_END(yielder_frame->out))
         Init_Block(out_copy, yielder_details);  // special identity
     else
