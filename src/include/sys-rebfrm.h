@@ -775,6 +775,14 @@ struct Reb_Frame {
     struct {
         const RELVAL *value;
     } reval;
+
+    // Used to hold on to the PARSE rule, which may point into the actual
+    // rule block (and be thus specified by the rule specifier) or it may
+    // point to the spare cell (in which case it would be SPECIFIED)
+    //
+    struct {
+        const RELVAL *rule;
+    } parse;
   } u;
 
     // !!! This was EVAL_FLAG_TOOK_HOLD.  But during rebase there weren't
