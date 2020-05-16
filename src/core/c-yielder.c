@@ -278,10 +278,10 @@ REBNATIVE(yielder)
 
     assert(IS_BLOCK(ARR_AT(details, IDX_YIELDER_BODY)));
     Init_Blank(ARR_AT(details, IDX_YIELDER_STATE));  // starting
-    Init_Unreadable_Blank(ARR_AT(details, IDX_YIELDER_LAST_YIELDER_CONTEXT));
-    Init_Unreadable_Blank(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT));
-    Init_Unreadable_Blank(ARR_AT(details, IDX_YIELDER_DATA_STACK));
-    Init_Unreadable_Blank(ARR_AT(details, IDX_YIELDER_OUT));
+    Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_LAST_YIELDER_CONTEXT));
+    Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT));
+    Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_DATA_STACK));
+    Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_OUT));
 
     return Init_Action_Unbound(D_OUT, yielder);
 }
