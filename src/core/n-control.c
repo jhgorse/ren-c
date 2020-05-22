@@ -1515,12 +1515,30 @@ REBNATIVE(catch)
 {
     INCLUDE_PARAMS_OF_CATCH;
 
+    enum {
+        ST_CATCH_INITIAL_ENTRY = 0,
+        ST_CATCH_EVALUATION_FINISHED
+    };
+
+    switch (D_STATE_BYTE) {
+        case ST_CATCH_INITIAL_ENTRY: goto initial_entry;
+        case ST_CATCH_EVALUATION_FINISHED: goto evaluation_finished;
+        default: assert(false);
+    }
+
+  initial_entry: {
+    //
     // /ANY would override /NAME, so point out the potential confusion
     //
     if (REF(any) and REF(name))
         fail (Error_Bad_Refines_Raw());
 
-    if (not Do_Any_Array_At_Throws(D_OUT, ARG(block), SPECIFIED)) {
+    D_STATE_BYTE = ST_CATCH_EVALUATION_FINISHED;
+    CONTINUE_CATCHABLE (ARG(block));
+  }
+
+  evaluation_finished: {
+    if (not Is_Throwing(D_FRAME)) {
         if (REF(result))
             rebElide(
                 NATIVE_VAL(set), rebQ(REF(result)), rebQ(D_OUT),
@@ -1593,24 +1611,25 @@ REBNATIVE(catch)
             goto was_caught;
     }
 
-    return R_THROWN; // throw name is in D_OUT, value is held task local
+    return R_THROWN;  // throw name is in D_OUT, value is held task local
 
   was_caught:
 
     if (REF(name) or REF(any)) {
         REBARR *a = Make_Array(2);
 
-        Move_Value(ARR_AT(a, 0), label); // throw name
-        CATCH_THROWN(ARR_AT(a, 1), D_OUT); // thrown value--may be null!
+        Move_Value(ARR_AT(a, 0), label);  // throw name
+        CATCH_THROWN(ARR_AT(a, 1), D_OUT);  // thrown value--may be null!
         if (IS_NULLED(ARR_AT(a, 1)))
-            TERM_ARRAY_LEN(a, 1); // trim out null value (illegal in block)
+            TERM_ARRAY_LEN(a, 1);  // trim out null value (illegal in block)
         else
             TERM_ARRAY_LEN(a, 2);
         return Init_Block(D_OUT, a);
     }
 
-    CATCH_THROWN(D_OUT, D_OUT); // thrown value
+    CATCH_THROWN(D_OUT, D_OUT);  // thrown value
     return D_OUT;
+  }
 }
 
 
