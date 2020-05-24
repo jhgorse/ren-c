@@ -31,20 +31,6 @@
 #include "sys-core.h"
 
 
-// This is the code which is protected by the exception mechanism.  See the
-// rebRescue() API for more information.
-//
-static const REBVAL *Trap_Dangerous(REBFRM *frame_) {
-    INCLUDE_PARAMS_OF_TRAP;
-    UNUSED(ARG(result));
-
-    if (Do_Branch_Throws(D_OUT, ARG(code)))
-        return VOID_VALUE;
-
-    return nullptr;
-}
-
-
 //
 //  trap: native [
 //
@@ -62,19 +48,35 @@ REBNATIVE(trap)
 {
     INCLUDE_PARAMS_OF_TRAP;
 
-    REBVAL *error = rebRescue(cast(REBDNG*, &Trap_Dangerous), frame_);
-    UNUSED(ARG(code)); // gets used by the above call, via the frame_ pointer
-    if (not error) {
-        if (REF(result))
-            rebElide(NATIVE_VAL(set), rebQ(REF(result)), rebQ(D_OUT), rebEND);
-        return nullptr; // code didn't fail() or throw
+    // !!! For stackless, the implementation of TRAP is actually moved into
+    // the trampoline.  A generic mechanism that allows dispatchers to
+    // register interest in errors is perhaps needed to parallel such a
+    // mechanism for throws.
+
+    enum {
+        ST_TRAP_INITIAL_ENTRY = 0,
+        ST_TRAP_CODE_EVALUATED
+    };
+
+    switch (D_STATE_BYTE) {
+       case ST_TRAP_INITIAL_ENTRY: goto initial_entry;
+       case ST_TRAP_CODE_EVALUATED: goto code_evaluated;
+       default: assert(false);
     }
 
-    if (IS_VOID(error)) // signal used to indicate a throw
-        return R_THROWN;
+  initial_entry: {
+    D_STATE_BYTE = ST_TRAP_CODE_EVALUATED;
+    CONTINUE (ARG(code));
+  }
 
-    assert(IS_ERROR(error));
-    return error;
+  code_evaluated: {  // e.g. no error or throw occurred
+    if (IS_ERROR(D_OUT))
+        return D_OUT;  // !!! hack for the moment
+
+    if (REF(result))
+        rebElideQ(NATIVE_VAL(set), REF(result), D_OUT, rebEND);
+    return nullptr;
+  }
 }
 
 

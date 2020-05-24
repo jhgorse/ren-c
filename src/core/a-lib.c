@@ -1495,10 +1495,10 @@ REBVAL *RL_rebRescue(
 ){
     ENTER_API;
 
-    struct Reb_State state;
+    struct Reb_Jump jump;
     REBCTX *error_ctx;
 
-    PUSH_TRAP(&error_ctx, &state);
+    PUSH_TRAP(&error_ctx, &jump);
 
     // We want allocations that occur in the body of the C function for the
     // rebRescue() to be automatically cleaned up in the case of an error.
@@ -1531,7 +1531,7 @@ REBVAL *RL_rebRescue(
 
     Drop_Dummy_Frame_Unbalanced(f);
 
-    DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&state);
+    DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
 
     if (not result)
         return nullptr;  // null is considered a legal result
@@ -1577,10 +1577,10 @@ REBVAL *RL_rebRescueWith(
 ){
     ENTER_API;
 
-    struct Reb_State state;
+    struct Reb_Jump jump;
     REBCTX *error_ctx;
 
-    PUSH_TRAP(&error_ctx, &state);
+    PUSH_TRAP(&error_ctx, &jump);
 
     // The first time through the following code 'error' will be null, but...
     // `fail` can longjmp here, so 'error' won't be null *if* that happens!
@@ -1597,7 +1597,7 @@ REBVAL *RL_rebRescueWith(
     REBVAL *result = (*dangerous)(opaque);  // guarded by trap
     assert(not IS_NULLED(result));  // nulled cells not exposed by API
 
-    DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&state);
+    DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
 
     return result;  // no special handling, may be NULL
 }
