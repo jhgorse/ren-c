@@ -699,9 +699,9 @@ REB_R Composer_Executor(REBFRM *f) {
     if (
         predicate
         and STATE_BYTE(f) != ST_COMPOSER_DOUBLE_GROUP_EVAL
-        and VAL_ACTION(predicate) != NAT_ACTION(identity)
+        and VAL_ACTION(predicate) != NATIVE_ACT(identity)
     ){
-        insert = rebValue(predicate, rebQ1(f->out), rebEND);
+        insert = rebValue(predicate, rebQ(f->out), rebEND);
     } else
         insert = IS_NULLED(f->out) ? nullptr : f->out;
 
