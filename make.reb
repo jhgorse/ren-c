@@ -20,32 +20,35 @@ wchar: charset [
 ]
 
 expand: function [
-    template [block! text! file! tag!]
+    template [block! group! text! file! tag!]
 ][
     esc: #"$"
     t: r: _
-    r: make block! 0
-    if block? template [
+    if any [block? template group? template] [
+        r: make type-of template 0
         for-next t template [
             new-line tail r new-line? t
             switch type-of t/1 [
-                block! [append/only r expand t/1]
+                block! group! [append/only r expand t/1]
                 text! file! tag! [append r expand t/1]
             ] else [append r t/1]
         ]
         new-line tail r new-line? template
         return r
     ]
+    r: make block! 0
+    if not find template esc [return template]
     parse as text! template [
         any [
             copy t to esc skip
             (if not empty? t [append r t])
-            [ [ "(" copy t to #")" skip
+            [ 
+                [ "(" copy t to #")" skip
                 | copy t some wchar
-	]
+	        ]
                 ( t: blockify load t
-	    append/only r to-group t
-	)
+	            append/only r to-group t
+	        )
             | opt esc (append r esc)
             ]
         ]
@@ -57,12 +60,6 @@ expand: function [
     [ reduce ['to (type-of template) 'unspaced r] ]
 ]
 
-expand-many: function [
-    template [block! any-string!]
-    'vars
-    data [block!]
-][ map-each :vars data expand template ]
-
 &: enfix :join
 
 dump: function [
@@ -71,7 +68,7 @@ dump: function [
 ][
     r: (mold makefile) & "^/; vim: set syn=rebol:"
     if empty? target [print r]
-    else [write to-file targetr]
+    else [write to-file target r]
 ]
 
 gmake: function [
@@ -108,7 +105,7 @@ if not set? 'target [ target:
     ]
 ]
 
-makefile: reduce do to-file makefile
+makefile: reduce do expand load to-file makefile
 m: makefile
 while [not tail? m] [
     while [block? m/1] [
@@ -129,4 +126,4 @@ switch cmd [
     "make" [gmake makefile target]
 ] else [ print help-me ]
 
-; vim: set et sw=2:
+; vim: set et sw=4:

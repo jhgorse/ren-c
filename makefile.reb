@@ -1,5 +1,5 @@
-REBOL-TOOL: system/options/boot
-REBOL: spaced [REBOL-TOOL "-qs"]
+REBOL_TOOL: system/options/boot
+REBOL: "$REBOL_TOOL -qs"
 BASE_DIR: %..
 TOOLS: BASE_DIR/tools
 SRC: BASE_DIR/src
@@ -8,7 +8,7 @@ GIT_COMMIT: default ["unknown"]
 OS_ID: 0.13.2
 MKDIR: "mkdir -p"
 DEFS: "-DNDEBUG -DOS_STACK_GROWS_DOWN -DENDIAN_LITTLE -DHAS_LL_CONSTS -D_FILE_OFFSET_BITS=64 -DTO_ANDROID -DTO_ANDROID5_ARM"
-INCLUDE: do expand "-I$SRC/include -Iprep/include"
+INCLUDE: "-I$SRC/include -Iprep/include"
 CC: "gcc -c"
 CFLAGS: "-O2 -fvisibility=hidden -fPIC"
 LINK: "gcc"
@@ -199,20 +199,18 @@ OBJS: [
   %tmp-mod-view-init
 ]
 
-[ ; targets
+[ ;;; TARGETS ;;;
 
-"clean" _ expand-many [
-    {rm -fr $X}
-] X [
+"clean" _ map-each X [
     %objs/
     %prep/
     %r3
     %libr3.*
+] [
+    {rm -fr $X}
 ] 
  
-"folders" _ expand-many [
-    {$MKDIR objs/$X}
-] X [
+"folders" _ map-each X [
     %""
     %bmp/
     %console/
@@ -240,19 +238,18 @@ OBJS: [
     %uuid/
     %vector/
     %view/
+] [
+    {$MKDIR objs/$X}
 ]
 
-"prep" REBOL-TOOL [
-    reduce expand [
+"prep" REBOL_TOOL [
+    reduce [
     {$REBOL $TOOLS/make-natives.r}
     {$REBOL $TOOLS/make-headers.r}
     {$REBOL $TOOLS/make-boot.r OS_ID: $OS_ID GIT_COMMIT: $GIT_COMMIT}
     {$REBOL $TOOLS/make-reb-lib.r OS_ID: $OS_ID}
     ]
-    expand-many [
-        S: %extensions/$N/mod-$N.c
-        {$REBOL $TOOLS/prep-extension.r MODULE: $M SRC: $S OS_ID: $OS_ID}
-    ] [M N] [
+    map-each [M N] [
         "BMP" %bmp
         "Console" %console
         "Crypt" %crypt
@@ -277,23 +274,19 @@ OBJS: [
         "UUID" %uuid
         "Vector" %vector
         "View" %view
+    ] [
+        S: %extensions/$N/mod-$N.c
+        {$REBOL $TOOLS/prep-extension.r MODULE: $M SRC: $S OS_ID: $OS_ID}
     ]
 
-    reduce expand [
+    reduce [
         {$REBOL $TOOLS/make-boot-ext-header.r EXTENSIONS: Image:Console:Crypt:BMP:DNS:Event:Filesystem:GIF:Vector:Time:JPG:Library:UUID:Network:PNG:UTF:Secure:Serial:Stdio:View:Process:Gob:Debugger:Locale}
         {$(REBOL) $SRC/main/prep-main.reb}
     ]
 ]
 
 ; crypt module
-expand-many [
-    N: %mbedtls/library/$N
-    T: %objs/crypt/$N.o
-    S: %$EXTENSIONS/crypt/$N.c
-    reduce [
-      %$T %$S {$CC -I$EXTENSIONS/crypt -I$EXTENSIONS/crypt/mbedtls/include -DMBEDTLS_CONFIG_FILE=\"mbedtls-rebol-config.h\" -Iprep/extensions/crypt $INCLUDE -DREB_API $DEFS $CFLAGS -o $t $s}
-    ]
-] N [
+map-each N [
     %aes
     %arc4
     %bignum
@@ -314,15 +307,16 @@ expand-many [
     %sha1
     %sha256
     %sha512
+] [
+    N: %mbedtls/library/$N
+    T: %objs/crypt/$N.o
+    S: %$EXTENSIONS/crypt/$N.c
+    reduce [
+      %$T %$S {$CC -I$EXTENSIONS/crypt -I$EXTENSIONS/crypt/mbedtls/include -DMBEDTLS_CONFIG_FILE=\"mbedtls-rebol-config.h\" -Iprep/extensions/crypt $INCLUDE -DREB_API $DEFS $CFLAGS -o $t $s}
+    ]
 ]
 
-expand-many [
-    T: %objs/tmp-mod-$N-init.o
-    S: %prep/extensions/$N/tmp-mod-$N-init.c
-    reduce [
-        %$T %$S {$CC $O -Iprep/extensions/$N $INCLUDE -DREB_API $DEFS $CFLAGS -o $T $S}
-    ]
-] [N O] reduce expand [
+map-each [N O] reduce [
     %bmp _
     %console _
     %crypt {-I$EXTENSIONS/crypt -I$EXTENSIONS/crypt/mbedtls/include -DMBEDTLS_CONFIG_FILE=\"mbedtls-rebol-config.h\" }
@@ -347,15 +341,15 @@ expand-many [
     %uuid {-I$EXTENSIONS/uuid/libuuid }
     %vector _
     %view _
+] [
+    T: %objs/tmp-mod-$N-init.o
+    S: %prep/extensions/$N/tmp-mod-$N-init.c
+    reduce [
+        %$T %$S {$CC $O -Iprep/extensions/$N $INCLUDE -DREB_API $DEFS $CFLAGS -o $T $S}
+    ]
 ]
 
-expand-many [
-    T: %objs/$A/$B.o
-    S: %$EXTENSIONS/$A/$B.c
-    reduce [
-      %$T %$S {$CC $O -Iprep/extensions/$A $INCLUDE -DREB_API $DEFS $CFLAGS -o $T $S}
-    ]
-] [A B O] reduce expand [
+map-each [A B O] reduce [
     %bmp %mod-bmp _
     %console %mod-console _
     %crypt %mod-crypt {-I$EXTENSIONS/crypt -I$EXTENSIONS/crypt/mbedtls/include -DMBEDTLS_CONFIG_FILE=\"mbedtls-rebol-config.h\" }
@@ -399,15 +393,15 @@ expand-many [
     %stdio %stdio-posix _
     %time %time-posix _
     %vector %t-vector _
+] [
+    T: %objs/$A/$B.o
+    S: %$EXTENSIONS/$A/$B.c
+    reduce [
+      %$T %$S {$CC $O -Iprep/extensions/$A $INCLUDE -DREB_API $DEFS $CFLAGS -o $T $S}
+    ]
 ]
 
-expand-many [
-    T: %objs/$N.o
-    S: %$SRC/core/$N.c
-    reduce [
-      %$T %$S {$CC $INCLUDE -Iprep/core -DREB_API $DEFS $CFLAGS $W -o $T $S}
-    ]
-] [N W] [
+map-each [N W] [
     %a-constants _
     %a-globals _
     %a-lib _
@@ -499,36 +493,40 @@ expand-many [
     %u-compress _
     %u-parse _
     %u-zlib {-Wno-unknown-warning -Wno-implicit-fallthrough}
+] [
+    T: %objs/$N.o
+    S: %$SRC/core/$N.c
+    reduce [
+      %$T %$S {$CC $INCLUDE -Iprep/core -DREB_API $DEFS $CFLAGS $W -o $T $S}
+    ]
 ]
 
-expand-many [
+map-each N [
+    %tmp-boot-block
+    %tmp-type-hooks
+] [
     T: %objs/$N.o
     S: %prep/core/$N.c
     reduce [
       %$T %$S {$CC $INCLUDE -Iprep/core -DREB_API $DEFS $CFLAGS -o $T $S}
     ]
-] N [
-    %tmp-boot-block
-    %tmp-type-hooks
 ]
 
-reduce expand [
-    %objs/main.o %$SRC/main/main.c 
-    {$CC $INCLUDE -Iprep/main -DREB_CORE $DEFS $CFLAGS -o objs/main.o $SRC/main/main.c}
-]
+%objs/main.o %$SRC/main/main.c 
+{$CC $INCLUDE -Iprep/main -DREB_CORE $DEFS $CFLAGS -o objs/main.o $SRC/main/main.c}
 
-%r3 expand-many [
+%r3 map-each N (OBJS & %main) [
   %objs/$N.o
-] N (OBJS & %main)
+]
 reduce [
-    spaced [LINK "-o r3" LFLAGS] & (expand-many [
-      %objs/$N.o
-    ] N OBJS) & [LIBS %objs/main.o]
-    do expand {$STRIP r3}
+    {$LINK -o r3 $LFLAGS}
+    & (map-each N OBJS [%objs/$N.o])
+    & {$LIBS objs/main.o}
+    {$STRIP r3}
 ] 
 
-"check" %r3 do expand {$STRIP r3}
+"check" %r3 reduce [{$STRIP r3}]
 
-] ; end targets
+] ;;; END TARGETS ;;;
 
 ; vim: set et sw=4:
