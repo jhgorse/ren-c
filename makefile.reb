@@ -9,197 +9,250 @@ OS_ID: 0.13.2
 MKDIR: "mkdir -p"
 DEFS: "-DNDEBUG -DOS_STACK_GROWS_DOWN -DENDIAN_LITTLE -DHAS_LL_CONSTS -D_FILE_OFFSET_BITS=64 -DTO_ANDROID -DTO_ANDROID5_ARM"
 INCLUDE: "-I$SRC/include -Iprep/include"
-CC: "gcc -c"
+COMPILER: 'gcc
+CC: "gcc -c" ; Compile Command
 CFLAGS: "-O2 -fvisibility=hidden -fPIC"
-LINK: "gcc"
+LINK: "gcc" ; Link command
 LFLAGS: "-fvisibility=hidden -pie -rdynamic" 
 LIBS: "-lm -ldl -llog"
 STRIP: "strip -S -x -X"
 
-OBJS: [
-  %a-constants
-  %a-globals
-  %a-lib
-  %b-init
-  %c-bind
-  %c-do
-  %c-context
-  %c-error
-  %c-eval
-  %c-function
-  %c-path
-  %c-port
-  %c-signal
-  %c-specialize
-  %c-value
-  %c-word
-  %d-crash
-  %d-dump
-  %d-eval
-  %d-gc
-  %d-print
-  %d-stack
-  %d-stats
-  %d-test
-  %d-trace
-  %d-winstack
-  %f-blocks
-  %f-deci
-  %f-device
-  %f-dtoa
-  %f-enbase
-  %f-extension
-  %f-int
-  %f-math
-  %f-modify
-  %f-qsort
-  %f-random
-  %f-round
-  %f-series
-  %f-stubs
-  %l-scan
-  %l-types
-  %m-gc
-  %m-pools
-  %m-series
-  %m-stacks
-  %n-control
-  %n-data
-  %n-do
-  %n-error
-  %n-function
-  %n-io
-  %n-loop
-  %n-math
-  %n-protect
-  %n-reduce
-  %n-sets
-  %n-strings
-  %n-system
-  %s-cases
-  %s-crc
-  %s-find
-  %s-make
-  %s-mold
-  %s-ops
-  %t-binary
-  %t-bitset
-  %t-blank
-  %t-block
-  %t-char
-  %t-datatype
-  %t-date
-  %t-decimal
-  %t-function
-  %t-integer
-  %t-logic
-  %t-map
-  %t-money
-  %t-object
-  %t-pair
-  %t-port
-  %t-quoted
-  %t-string
-  %t-time
-  %t-tuple
-  %t-typeset
-  %t-varargs
-  %t-word
-  %u-compress
-  %u-parse
-  %u-zlib
-  %tmp-boot-block
-  %tmp-type-hooks
-  %bmp/mod-bmp
-  %tmp-mod-bmp-init
-  %console/mod-console
-  %tmp-mod-console-init
-  %crypt/mod-crypt
-  %crypt/mbedtls/library/rsa
-  %crypt/mbedtls/library/rsa_internal
-  %crypt/mbedtls/library/oid
-  %crypt/mbedtls/library/platform
-  %crypt/mbedtls/library/platform_util
-  %crypt/mbedtls/library/bignum
-  %crypt/mbedtls/library/md
-  %crypt/mbedtls/library/cipher
-  %crypt/mbedtls/library/cipher_wrap
-  %crypt/mbedtls/library/sha256
-  %crypt/mbedtls/library/sha512
-  %crypt/mbedtls/library/ripemd160
-  %crypt/mbedtls/library/md5
-  %crypt/mbedtls/library/sha1
-  %crypt/mbedtls/library/aes
-  %crypt/mbedtls/library/arc4
-  %crypt/mbedtls/library/dhm
-  %crypt/mbedtls/library/ecdh
-  %crypt/mbedtls/library/ecp
-  %crypt/mbedtls/library/ecp_curves
-  %tmp-mod-crypt-init
-  %debugger/mod-debugger
-  %tmp-mod-debugger-init
-  %dns/mod-dns
-  %tmp-mod-dns-init
-  %event/mod-event
-  %event/t-event
-  %event/p-event
-  %event/event-posix
-  %tmp-mod-event-init
-  %filesystem/mod-filesystem
-  %filesystem/p-file
-  %filesystem/p-dir
-  %filesystem/file-posix
-  %tmp-mod-filesystem-init
-  %gif/mod-gif
-  %tmp-mod-gif-init
-  %gob/mod-gob
-  %gob/t-gob
-  %tmp-mod-gob-init
-  %image/mod-image
-  %image/t-image
-  %tmp-mod-image-init
-  %jpg/mod-jpg
-  %jpg/u-jpg
-  %tmp-mod-jpg-init
-  %library/mod-library
-  %library/library-posix
-  %tmp-mod-library-init
-  %locale/mod-locale
-  %tmp-mod-locale-init
-  %network/mod-network
-  %network/dev-net
-  %tmp-mod-network-init
-  %png/mod-png
-  %png/lodepng
-  %tmp-mod-png-init
-  %process/mod-process
-  %process/call-posix
-  %tmp-mod-process-init
-  %secure/mod-secure
-  %tmp-mod-secure-init
-  %serial/mod-serial
-  %serial/serial-posix
-  %tmp-mod-serial-init
-  %stdio/mod-stdio
-  %stdio/p-stdio
-  %stdio/stdio-posix
-  %stdio/readline-posix
-  %tmp-mod-stdio-init
-  %time/mod-time
-  %time/time-posix
-  %tmp-mod-time-init
-  %utf/mod-utf
-  %tmp-mod-utf-init
-  %uuid/mod-uuid
-  %tmp-mod-uuid-init
-  %vector/mod-vector
-  %vector/t-vector
-  %tmp-mod-vector-init
-  %view/mod-view
-  %tmp-mod-view-init
-]
 
-[ ;;; TARGETS ;;;
+;; OBJS
+core-objs: [
+    ; msc: /wd5045 => https://stackoverflow.com/q/50399940
+    ; msc: /wd4146 => unary minus operator applied to unsigned type
+    ; (A)???
+    %a-constants _
+    %a-globals _
+    %a-lib _
+    ; (B)oot
+    %b-init _
+    ; (C)ore
+    %c-bind _
+    %c-do _
+    %c-context _
+    %c-error _
+    %c-eval [#prefer-O2-optimization]
+        ; There are several good reasons to optimize the evaluator itself even
+        ; if one is doing a "size-biased" build.  It's not just about wanting
+        ; the critical code to be faster--but also, since it recurses, if
+        ; stack frames aren't flattened out then they add up...and may blow
+        ; internal limits (like in a web browser for JS/WASM calls)
+        ;
+    %c-function _
+    %c-path _
+    %c-port _
+    %c-signal _
+    %c-specialize _
+    %c-value _
+    %c-word _
+    ; (D)ebug
+    %d-crash _
+    %d-dump _
+    %d-eval _
+    %d-gc _
+    %d-print _
+    %d-stack _
+    %d-stats _
+    %d-test _
+    %d-trace _
+    %d-winstack _
+    ; (F)???
+    %f-blocks _
+    %f-deci _
+        ; May 2018 update to MSVC 2017 added warnings for Spectre mitigation.
+        ; %f-deci.c is a lot of twiddly custom C code for implementing a fixed
+        ; precision math type, that was for some reason a priority in R3-Alpha
+        ; but isn't very central to Ren-C.  It is not a priority to audit
+        ; it for speed, so allow it to be slow if MSVC compiles with /Qspectre
+        ;
+    %f-device _
+    %f-dtoa [
+        gcc "-Wno-cast-qual -Wno-unused-const-variable -Wno-sign-compare -Wno-uninitialized -Wno-unknown-warning -Wno-implicit-fallthrough"
+        msc "/wd5045 /wd4146"
+    ] 
+        ; f-dtoa.c comes from a third party and is an old file.  There is an
+        ; updated package, but it is not a single-file...rather something with
+        ; a complex build process.  If it were to be updated, it would need
+        ; to be done through a process that extracted it in a way to fit into
+        ; the ethos of the Rebol build process.
+        ;
+        ; Hence we add tolerance for warnings that the file has.
+        ;
+    %f-enbase [msc "/wd5045"]
+        ; At time of writing there are 4 Spectre mitigations, which should
+        ; be looked at and rewritten when there is time:
+        ;
+    %f-extension _
+    %f-int _
+    %f-math _
+    %f-modify _
+    %f-qsort _
+    %f-random _
+    %f-round _
+    %f-series _
+    %f-stubs _
+    ; (L)exer
+    %l-scan _
+    %l-types _
+    ; (M)emory
+    %m-gc _
+    %m-pools [gcc "-Wno-uninitialized"]
+    %m-series _
+    %m-stacks _
+    ; (N)atives
+    %n-control _
+    %n-data _
+    %n-do _
+    %n-error _
+    %n-function _
+    %n-io _
+    %n-loop _
+    %n-math _
+    %n-protect _
+    %n-reduce _
+    %n-sets _
+    %n-strings _
+    %n-system _
+    ; (S)trings
+    %s-cases _
+    %s-crc _
+    %s-find _
+    %s-make _
+    %s-mold _
+    %s-ops _
+    ; (T)ypes
+    %t-binary _
+    %t-bitset _
+    %t-blank _
+    %t-block _
+    %t-char _
+    %t-datatype _
+    %t-date _
+    %t-decimal _
+    %t-function _
+    %t-integer _
+    %t-logic _
+    %t-map _
+    %t-money _
+    %t-object _
+    %t-pair _
+    %t-port _
+    %t-quoted _
+    %t-string _
+    %t-time _
+    %t-tuple _
+    %t-typeset _
+    %t-varargs _
+    %t-word _
+    %u-compress _
+    ; (U)??? (3rd-party code extractions)
+    %u-parse _
+    %u-zlib [
+        gcc "-Wno-unknown-warning -Wno-implicit-fallthrough" msc "/wd5045" <no-make-header>
+    ]
+        ; Zlib is an active project so it would be worth it to check to see
+        ; if minor patches for subverting Spectre mitigation would be taken.
+]
+generated-objs: [ ; Files created by the make-boot process
+    %tmp-boot-block _
+    %tmp-type-hooks _
+]
+extensions-objs: [
+    %bmp/mod-bmp _
+    %tmp-mod-bmp-init _
+    %console/mod-console _
+    %tmp-mod-console-init _
+    %crypt/mod-crypt _
+    %crypt/mbedtls/library/rsa _
+    %crypt/mbedtls/library/rsa_internal _
+    %crypt/mbedtls/library/oid _
+    %crypt/mbedtls/library/platform _
+    %crypt/mbedtls/library/platform_util _
+    %crypt/mbedtls/library/bignum _
+    %crypt/mbedtls/library/md _
+    %crypt/mbedtls/library/cipher _
+    %crypt/mbedtls/library/cipher_wrap _
+    %crypt/mbedtls/library/sha256 _
+    %crypt/mbedtls/library/sha512 _
+    %crypt/mbedtls/library/ripemd160 _
+    %crypt/mbedtls/library/md5 _
+    %crypt/mbedtls/library/sha1 _
+    %crypt/mbedtls/library/aes _
+    %crypt/mbedtls/library/arc4 _
+    %crypt/mbedtls/library/dhm _
+    %crypt/mbedtls/library/ecdh _
+    %crypt/mbedtls/library/ecp _
+    %crypt/mbedtls/library/ecp_curves _
+    %tmp-mod-crypt-init _
+    %debugger/mod-debugger _
+    %tmp-mod-debugger-init _
+    %dns/mod-dns _
+    %tmp-mod-dns-init _
+    %event/mod-event _
+    %event/t-event _
+    %event/p-event _
+    %event/event-posix _
+    %tmp-mod-event-init _
+    %filesystem/mod-filesystem _
+    %filesystem/p-file _
+    %filesystem/p-dir _
+    %filesystem/file-posix _
+    %tmp-mod-filesystem-init _
+    %gif/mod-gif _
+    %tmp-mod-gif-init _
+    %gob/mod-gob _
+    %gob/t-gob _
+    %tmp-mod-gob-init _
+    %image/mod-image _
+    %image/t-image _
+    %tmp-mod-image-init _
+    %jpg/mod-jpg _
+    %jpg/u-jpg _
+    %tmp-mod-jpg-init _
+    %library/mod-library _
+    %library/library-posix _
+    %tmp-mod-library-init _
+    %locale/mod-locale _
+    %tmp-mod-locale-init _
+    %network/mod-network _
+    %network/dev-net _
+    %tmp-mod-network-init _
+    %png/mod-png _
+    %png/lodepng _
+    %tmp-mod-png-init _
+    %process/mod-process _
+    %process/call-posix _
+    %tmp-mod-process-init _
+    %secure/mod-secure _
+    %tmp-mod-secure-init _
+    %serial/mod-serial _
+    %serial/serial-posix _
+    %tmp-mod-serial-init _
+    %stdio/mod-stdio _
+    %stdio/p-stdio _
+    %stdio/stdio-posix _
+    %stdio/readline-posix _
+    %tmp-mod-stdio-init _
+    %time/mod-time _
+    %time/time-posix _
+    %tmp-mod-time-init _
+    %utf/mod-utf _
+    %tmp-mod-utf-init _
+    %uuid/mod-uuid _
+    %tmp-mod-uuid-init _
+    %vector/mod-vector _
+    %vector/t-vector _
+    %tmp-mod-vector-init _
+    %view/mod-view _
+    %tmp-mod-view-init _
+]
+OBJS: map-each [s o] core-objs & generated-objs & extensions-objs [s]
+
+
+;; TARGETS
+[
 
 "clean" _ map-each X [
     %objs/
@@ -401,110 +454,16 @@ map-each [A B O] reduce [
     ]
 ]
 
-map-each [N W] [
-    %a-constants _
-    %a-globals _
-    %a-lib _
-    %b-init _
-    %c-bind _
-    %c-do _
-    %c-context _
-    %c-error _
-    %c-eval _
-    %c-function _
-    %c-path _
-    %c-port _
-    %c-signal _
-    %c-specialize _
-    %c-value _
-    %c-word _
-    %d-crash _
-    %d-dump _
-    %d-eval _
-    %d-gc _
-    %d-print _
-    %d-stack _
-    %d-stats _
-    %d-test _
-    %d-trace _
-    %d-winstack _
-    %f-blocks _
-    %f-deci _
-    %f-device _
-    %f-dtoa {-Wno-cast-qual -Wno-unused-const-variable -Wno-sign-compare -Wno-uninitialized -Wno-unknown-warning -Wno-implicit-fallthrough}
-    %f-enbase _
-    %f-extension _
-    %f-int _
-    %f-math _
-    %f-modify _
-    %f-qsort _
-    %f-random _
-    %f-round _
-    %f-series _
-    %f-stubs _
-    %l-scan _
-    %l-types _
-    %m-gc _
-    %m-pools {-Wno-uninitialized}
-    %m-series _
-    %m-stacks _
-    %n-control _
-    %n-data _
-    %n-do _
-    %n-error _
-    %n-function _
-    %n-io _
-    %n-loop _
-    %n-math _
-    %n-protect _
-    %n-reduce _
-    %n-sets _
-    %n-strings _
-    %n-system _
-    %s-cases _
-    %s-crc _
-    %s-find _
-    %s-make _
-    %s-mold _
-    %s-ops _
-    %t-binary _
-    %t-bitset _
-    %t-blank _
-    %t-block _
-    %t-char _
-    %t-datatype _
-    %t-date _
-    %t-decimal _
-    %t-function _
-    %t-integer _
-    %t-logic _
-    %t-map _
-    %t-money _
-    %t-object _
-    %t-pair _
-    %t-port _
-    %t-quoted _
-    %t-string _
-    %t-time _
-    %t-tuple _
-    %t-typeset _
-    %t-varargs _
-    %t-word _
-    %u-compress _
-    %u-parse _
-    %u-zlib {-Wno-unknown-warning -Wno-implicit-fallthrough}
-] [
+map-each [N O] core-objs [
     T: %objs/$N.o
     S: %$SRC/core/$N.c
+    if O [O: try select O COMPILER] 
     reduce [
-      %$T %$S {$CC $INCLUDE -Iprep/core -DREB_API $DEFS $CFLAGS $W -o $T $S}
+      %$T %$S {$CC $INCLUDE -Iprep/core -DREB_API $DEFS $CFLAGS $O -o $T $S}
     ]
 ]
 
-map-each N [
-    %tmp-boot-block
-    %tmp-type-hooks
-] [
+map-each [N O] generated-objs [
     T: %objs/$N.o
     S: %prep/core/$N.c
     reduce [
