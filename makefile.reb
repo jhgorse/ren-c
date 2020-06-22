@@ -478,9 +478,9 @@ map-each [N O] generated-objs [
   %objs/$N.o
 ]
 reduce [
-    {$LINK -o r3 $LFLAGS}
-    & (map-each N OBJS [%objs/$N.o])
-    & {$LIBS objs/main.o}
+    {$LINK -o r3 $LFLAGS }
+    & (form map-each N OBJS [%objs/$N.o])
+    & { $LIBS objs/main.o}
     {$STRIP r3}
 ] 
 

@@ -1,9 +1,9 @@
-help-me: {ARGS: [SOURCE [CMD [OPTS]]]
+help-me: {ARGS: [/CMD] [SOURCE] [OPTS]
     SOURCE: INPUT_FILE  (default makefile.reb)
-    CMD:    make | dump (default make)
+    CMD:    /gmake | /dump (default /gmake)
 OPTS: 
-    make: OUT_FILE (default build/makefile)
-    dump: OUT_FILE (default stdout)
+    /gmake: OUT_FILE (default build/makefile)
+    /dump:  OUT_FILE (default stdout)
 }
 
 do %tools/bootstrap-shim.r
@@ -64,7 +64,7 @@ expand: function [
 
 dump: function [
     makefile [block!]
-    target [any-string!]
+    target [any-string! blank!]
 ][
     r: (mold makefile) & "^/; vim: set syn=rebol:"
     if empty? target [print r]
@@ -73,7 +73,7 @@ dump: function [
 
 gmake: function [
     makefile [block!]
-    target [any-string!]
+    target [any-string! blank!]
 ][
     r: make text! 0
     for-each [t s c] makefile [
@@ -95,15 +95,15 @@ gmake: function [
 === MAIN ===
 cd :system/options/path
 args: system/script/args
-makefile: any [pick args 1 "makefile.reb"]
-cmd: any [pick args 2 "make"]
-target: pick args 3
-if not set? 'target [ target:
-    switch cmd [
-        "dump" [_] ; stdout
-        "make" ["build/makefile"]
-    ]
+cmd: either first args [take args] [_]
+if cmd/1 != #"/" [
+    makefile: cmd cmd: _
+] else [
+    makefile: either first args
+    [ take args ][ "makefile.reb" ]
 ]
+output: either first args [take args] [_]
+cmd: default ["/gmake"]
 
 makefile: reduce do expand load to-file makefile
 m: makefile
@@ -122,8 +122,8 @@ while [not tail? m] [
 ]
 
 switch cmd [
-    "dump" [dump makefile target]
-    "make" [gmake makefile target]
+    "/dump" [dump makefile output]
+    "/gmake" [gmake makefile output]
 ] else [ print help-me ]
 
 ; vim: set et sw=4:
