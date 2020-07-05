@@ -62,6 +62,33 @@ expand: function [
 
 &: enfix :join
 
+find-files: function [
+  dir [file!]
+  test [file! blank!]
+][
+  filter: function [b [block!]] [
+    if not test [return b]
+    map-each x b [
+      if any [
+        dir? x
+        x = test
+      ] [x]
+    ]
+  ]
+  if 'dir != exists? dir [return null]
+  dir: dirize dir
+  b: map-each x (filter read dirize dir) [dir/:x]
+  while [not tail? b] [
+    d: b/1
+    if dir? d [
+      remove b
+      insert b
+        map-each x (filter read d) [d/:x]
+    ] else [b: next b]
+  ]
+  b: head b
+]
+
 dump: function [
     makefile [block!]
     target [any-string! blank!]
@@ -106,6 +133,8 @@ output: either first args [take args] [_]
 cmd: default ["/gmake"]
 
 makefile: reduce do expand load to-file makefile
+
+;; selectively reduce and flatten fields
 m: makefile
 while [not tail? m] [
     while [block? m/1] [
