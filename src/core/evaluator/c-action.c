@@ -531,7 +531,7 @@ REB_R Action_Executor(REBFRM *f)
             goto continue_arg_loop;
         }
 
-      fulfill_arg:
+      fulfill_arg: {
 
         Reb_Param_Class pclass = VAL_PARAM_CLASS(f->param);
 
@@ -1075,6 +1075,7 @@ REB_R Action_Executor(REBFRM *f)
         }
 
         goto finalize_arg;  // have to put outside pclass initialization
+      }
     }
 
     assert(IS_END(f->arg));  // arg can otherwise point to any arg cell
