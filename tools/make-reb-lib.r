@@ -1,10 +1,10 @@
 REBOL [
-    System: "REBOL [R3] Language Interpreter and Run-time Environment"
-    Title: "Make libRebol related files (for %rebol.h)"
+    System: "Revolt Language Interpreter and Run-time Environment"
+    Title: "Make libRevolt related files (for %revolt.h)"
     File: %make-reb-lib.r
     Rights: {
         Copyright 2012 REBOL Technologies
-        Copyright 2012-2019 Rebol Open Source Contributors
+        Copyright 2012-2020 Revolt Open Source Contributors
         REBOL is a trademark of REBOL Technologies
     }
     License: {
@@ -31,7 +31,7 @@ ver: load %../src/boot/version.r
 === PROCESS %a-lib.h TO PRODUCE DESCRIPTION OBJECTS FOR EACH API ===
 
 ; This leverages the prototype parser, which uses PARSE on C lexicals, and
-; loads Rebol-structured data out of comments in the file.
+; loads Revolt-structured data out of comments in the file.
 ;
 ; Currently only %a-lib.c is searched for RL_API entries.  This makes it
 ; easier to track the order of the API routines and change them sparingly
@@ -62,7 +62,7 @@ emit-proto: func [return: <void> proto] [
         fail [
             proto
             newline
-            "Prototype has bad Rebol function header block in comment"
+            "Prototype has bad Revolt function header block in comment"
         ]
     ]
 
@@ -136,7 +136,7 @@ emit-proto: func [return: <void> proto] [
     ; https://github.com/rebol/rebol-issues/issues/2317
     ;
     append api-objects make object! compose/only [
-        spec: try match block! third header  ; Rebol metadata API comment
+        spec: try match block! third header  ; Revolt metadata API comment
         name: (ensure text! name)
         returns: (ensure text! trim/tail returns)
         paramlist: (ensure block! paramlist)
@@ -158,7 +158,7 @@ src-dir: %../src/core/
 process src-dir/a-lib.c
 
 
-=== GENERATE LISTS USED TO BUILD REBOL.H ===
+=== GENERATE LISTS USED TO BUILD REVOLT.H ===
 
 ; For readability, the technique used is not to emit line-by-line, but to
 ; give a "big picture overview" of the header file.  It is substituted into
@@ -213,7 +213,7 @@ for-each api api-objects [do in api [
             $<OPT-NORETURN>
             inline static $<Returns> $<Name>$<Q>$<inline>($<Wrapper-Params>) {
                 $<Opt-Va-Start>
-                $<opt-return> LIBREBOL_PREFIX($<Name>)($<Proxied-Args>);
+                $<opt-return> LIBREVOLT_PREFIX($<Name>)($<Proxied-Args>);
                 $<OPT-DEAD-END>
             }
         } compose [
@@ -238,8 +238,8 @@ for-each api api-objects [do in api [
             template <typename... Ts>
             $<OPT-NORETURN>
             inline static $<Returns> $<Name>$<Q>($<Wrapper-Params>) {
-                LIBREBOL_PACK_CPP_ARGS;
-                $<opt-return> LIBREBOL_PREFIX($<Name>)($<Proxied-Args>);
+                LIBREVOLT_PACK_CPP_ARGS;
+                $<opt-return> LIBREVOLT_PREFIX($<Name>)($<Proxied-Args>);
                 $<OPT-DEAD-END>
             }
         } compose [
@@ -349,24 +349,24 @@ c99-or-c++11-macros: collect [ map-each-api [
 ] ]
 
 
-=== GENERATE REBOL.H ===
+=== GENERATE REVOLT.H ===
 
-; Rather than put too many comments here in the Rebol, err on the side of
-; putting comments in the header itself.  `/* use old C style comments */`
+; Rather than put too many comments in the generating script, err on the side
+; of putting comments in the header itself.  `/* use old C style comments */`
 ; to help cue readers to knowing they're reading generated code and don't
-; edit, since the Rebol codebase at large uses `//`-style comments.
+; edit, since the Revolt C codebase at large uses only `//`-style comments.
 
 e-lib: (make-emitter
-    "Rebol External Library Interface" output-dir/rebol.h)
+    "Revolt External Library Interface" output-dir/revolt.h)
 
 e-lib/emit {
-    #ifndef REBOL_H_1020_0304  /* "include guard" allows multiple #includes */
-    #define REBOL_H_1020_0304  /* numbers in case REBOL_H defined elsewhere */
+    #ifndef REVOLT_H_1020_0304  /* "include guard" allows multiple #includes */
+    #define REVOLT_H_1020_0304  /* numbers in casee REVOLT_H already defined */
 
     /*
      * Some features are enhanced by the presence of a C++11 compiler or
      * above.  This ranges from simple things like the ability to detect a
-     * missing `rebEND` when REBOL_EXPLICIT_END is in effect, to allowing
+     * missing `rebEND` when REVOLT_EXPLICIT_END is in effect, to allowing
      * `int` or `std::string` parameters to APIs instead of using `rebI()` or
      * `rebT()`.  These are on by default if the compiler is capable, but
      * can be suppressed.
@@ -375,29 +375,29 @@ e-lib/emit {
      * even when this switch is used, but not in a way that affects the
      * runtime behavior uniquely beyond what C99 would do.)
      */
-    #if !defined(REBOL_NO_CPLUSPLUS)
+    #if !defined(REVOLT_NO_CPLUSPLUS)
         #if defined(__cplusplus) && __cplusplus >= 201103L
             /* C++11 or above, if following the standard (VS2017 does not) */
         #elif defined (CPLUSPLUS_11)
             /* Custom C++11 or above flag, to override Visual Studio's lie */
         #else
-            #define REBOL_NO_CPLUSPLUS  /* compiler not current enough */
+            #define REVOLT_NO_CPLUSPLUS  /* compiler not current enough */
         #endif
     #endif
 
     /*
      * The goal is to make it possible that the only include file one needs
-     * to make a simple Rebol library client is `#include "rebol.h"`.  Yet
-     * pre-C99 or pre-C++11 compilers will need `#define REBOL_EXPLICIT_END`
+     * to make a simple Revolt library client is `#include "revolt.h"`.  Yet
+     * pre-C99 or pre-C++11 compilers will need `#define REVOLT_EXPLICIT_END`
      * since variadic macros don't work.  They will also need shims for
      * stdint.h and stdbool.h included.
      */
     #include <stdlib.h>  /* for size_t */
     #include <stdarg.h>  /* for va_list, va_start() in inline functions */
-    #if !defined(_PSTDINT_H_INCLUDED) && !defined(LIBREBOL_NO_STDINT)
+    #if !defined(_PSTDINT_H_INCLUDED) && !defined(LIBREVOLT_NO_STDINT)
         #include <stdint.h>  /* for uintptr_t, int64_t, etc. */
     #endif
-    #if !defined(_PSTDBOOL_H_INCLUDED) && !defined(LIBREBOL_NO_STDBOOL)
+    #if !defined(_PSTDBOOL_H_INCLUDED) && !defined(LIBREVOLT_NO_STDBOOL)
         #if !defined(__cplusplus)
             #include <stdbool.h>  /* for bool, true, false (if C99) */
         #endif
@@ -488,7 +488,7 @@ e-lib/emit {
     /*
      * `wchar_t` is a pre-Unicode abstraction, whose size varies per-platform
      * and should be avoided where possible.  But Win32 standardizes it to
-     * 2 bytes in size for UTF-16, and uses it pervasively.  So libRebol
+     * 2 bytes in size for UTF-16, and uses it pervasively.  So libRevolt
      * currently offers APIs (e.g. rebTextWide() instead of rebText()) which
      * support this 2-byte notion of wide characters.
      *
@@ -532,14 +532,14 @@ e-lib/emit {
     typedef void (CLEANUP_CFUNC)(const REBVAL*);
 
     /*
-     * The API maps Rebol's `null` to C's 0 pointer, **but don't use NULL**.
+     * The API maps Revolt's `null` to C's 0 pointer, **but don't use NULL**.
      * Some C compilers define NULL as simply the constant 0, which breaks
      * use with variadic APIs...since they will interpret it as an integer
      * and not a pointer.
      *
      * **It's best to use C++'s `nullptr`**, or a suitable C shim for it,
-     * e.g. `#define nullptr ((void*)0)`.  That helps avoid obscuring the
-     * fact that the Rebol API's null really is C's null, and is conditionally
+     * e.g. `#define nullptr ((void*)0)`.  That helps avoid obscuring the fact
+     * that the Revolt API's null really is C's null, and is conditionally
      * false.  Seeing `rebNull` in source doesn't as clearly suggest this.
      *
      * However, **using NULL is broken, so don't use it**.  This macro is
@@ -549,13 +549,13 @@ e-lib/emit {
         ((REBVAL*)0)
 
     /*
-     * Since a C nullptr (pointer cast of 0) is used to represent the Rebol
+     * Since a C nullptr (pointer cast of 0) is used to represent the Revolt
      * `null` in the API, something different must be used to indicate the
      * end of variadic input.  So a pointer to data is used where the first
      * byte is illegal for starting UTF-8 (a continuation byte, first bit 1,
      * second bit 0) and the second byte is 0.
      *
-     * To Rebol, the first bit being 1 means it's a Rebol node, the second
+     * To Revolt, the first bit being 1 means it's a Revolt node, the second
      * that it is not in the "free" state.  The lowest bit in the first byte
      * clear indicates it doesn't point to a "cell".  The SECOND_BYTE() is
      * where the VAL_TYPE() of a cell is usually stored, and this being 0
@@ -594,7 +594,7 @@ e-lib/emit {
     #define rebL(flag) \
         rebR(rebLogic(flag))
 
-    #ifdef REBOL_EXPLICIT_END
+    #ifdef REVOLT_EXPLICIT_END
         /*
          * Most invocations of rebQ() are single-arity.  Avoid common pain
          * in the C89 builds by making the shorthand work (if truly needed
@@ -638,7 +638,7 @@ e-lib/emit {
      *
      * For convenience, calls to RL->xxx are wrapped in inline functions:
      */
-    typedef struct rebol_ext_api {
+    typedef struct revolt_ext_api {
         $[Lib-Struct-Fields];
     } RL_LIB;
 
@@ -648,9 +648,9 @@ e-lib/emit {
          */
         extern RL_LIB *RL; /* is passed to the RX_Init() function */
 
-        #define LIBREBOL_PREFIX(api_name) RL->##api_name
+        #define LIBREVOLT_PREFIX(api_name) RL->##api_name
 
-    #else  /* ...calling Rebol as DLL, or code built into the EXE itself */
+    #else  /* ...calling Revolt as DLL, or code built into the EXE itself */
 
         /*
          * !!! The RL_API macro has to be defined for the external prototypes
@@ -663,7 +663,7 @@ e-lib/emit {
         #define RL_API
       #endif
 
-        #define LIBREBOL_PREFIX(api_name) RL_##api_name
+        #define LIBREVOLT_PREFIX(api_name) RL_##api_name
 
         /*
          * Extern prototypes for RL_XXX, don't call these functions directly.
@@ -685,7 +685,7 @@ e-lib/emit {
     }  /* end the extern "C" */
     #endif
 
-    #if defined(REBOL_NO_CPLUSPLUS)
+    #if defined(REVOLT_NO_CPLUSPLUS)
         /*
          * Plain C only has va_list as a method of taking variable arguments.
          */
@@ -699,7 +699,7 @@ e-lib/emit {
          *
          * The simplicity is an advantage for optimization, but unsafe!  Type
          * checking is non-existent, and there is no protocol for knowing how
-         * many items are in a va_list.  The libRebol API uses rebEND to
+         * many items are in a va_list.  The libRevolt API uses rebEND to
          * signal termination, but it is awkward and easy to forget.
          *
          * C89 offers no real help, but C99 (and C++11 onward) standardize an
@@ -712,7 +712,7 @@ e-lib/emit {
          * rebEND is used explicitly, this gives a harmless but slightly i
          * efficient repetition.
          */
-        #if !defined(REBOL_EXPLICIT_END)
+        #if !defined(REVOLT_EXPLICIT_END)
           /*
            * Clients who #include "rebol.h" aren't expected to use %sys-core.h
            * internal APIs (including %sys-core.h hs %rebol.h automatically).
@@ -724,7 +724,7 @@ e-lib/emit {
            * but that is harmlessly redundant for a debug build...each call
            * will just have two rebENDs--one explicit, one implicit).
            */
-          #define REBOL_IMPLICIT_END
+          #define REVOLT_IMPLICIT_END
 
           #if defined (__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
             /* C99 or above */
@@ -733,12 +733,12 @@ e-lib/emit {
           #elif defined (CPLUSPLUS_11)
             /* Custom C++11 or above flag, to override Visual Studio's lie */
           #else
-            #error "REBOL_EXPLICIT_END must be used prior to C99 or C+++11"
+            #error "REVOLT_EXPLICIT_END must be used prior to C99 or C+++11"
           #endif
 
             $[C99-Or-C++11-Macros]
 
-        #else  /* REBOL_EXPLICIT_END */
+        #else  /* REVOLT_EXPLICIT_END */
 
             /*
              * !!! Some kind of C++ variadic trick using template recursion could
@@ -748,15 +748,14 @@ e-lib/emit {
 
             $[C89-Macros]
 
-        #endif  /* REBOL_EXPLICIT_END */
-
+        #endif  /* REVOLT_EXPLICIT_END */
 
         /*
          * The NOMACRO version of the API is one in which you can use macros
          * inside the call.  If you're using C this means you'll have to
          * explicitly put a rebEND on, whether using C99 or not.
          */
-        #define LIBREBOL_NOMACRO(api) api##_inline
+        #define LIBREVOLT_NOMACRO(api) api##_inline
     #else
         /*
          * If using C++, variadic calls can be type-checked to make sure only
@@ -809,7 +808,7 @@ e-lib/emit {
          * state of the recursion can check for whether there's a rebEND there
          * or not.
          */
-        #ifdef REBOL_EXPLICIT_END
+        #ifdef REVOLT_EXPLICIT_END
             template <typename Last>
             void rebArgRecurser_internal(
                 int i,
@@ -818,12 +817,12 @@ e-lib/emit {
             ){
                 static_assert(
                     std::is_same<const void*, Last>::value,
-                    "REBOL_EXPLICIT_END means rebEND must be last argument"
+                    "REVOLT_EXPLICIT_END means rebEND must be last argument"
                 );
                 data[i] = last;  /* hopefully rebEND (test it?) */
             }
 
-            #define LIBREBOL_PACK_CPP_ARGS \
+            #define LIBREVOLT_PACK_CPP_ARGS \
                 const size_t num_args = sizeof...(args); \
                 const void* packed[num_args]; \
                 rebArgRecurser_internal(0, packed, args...);
@@ -855,7 +854,7 @@ e-lib/emit {
                 data[i] = last;
             }*/
 
-            #define LIBREBOL_PACK_CPP_ARGS \
+            #define LIBREVOLT_PACK_CPP_ARGS \
                 const size_t num_args = sizeof...(args); \
                 const void* packed[num_args + 1]; \
                 rebArgRecurser_internal(0, packed, args...); \
@@ -884,7 +883,7 @@ e-lib/emit {
          * inside the call.  If you're using C99 this means you'll have to
          * explicitly put a rebEND on.  No special action w/C++ wrappers.
          */
-        #define LIBREBOL_NOMACRO(api) api
+        #define LIBREVOLT_NOMACRO(api) api
     #endif  /* C++ versions */
 
     /*
@@ -899,7 +898,7 @@ e-lib/emit {
      *     frame where the rebMalloc() occured.  This is especially useful
      *     when mixing C code involving allocations with rebValue(), etc.
      *
-     *  3. Memory gets counted in Rebol's knowledge of how much memory the
+     *  3. Memory gets counted in Revolt's knowledge of how much memory the
      *     system is using, for the purposes of triggering GC.
      *
      *  4. Out-of-memory errors on allocation automatically trigger
@@ -920,7 +919,7 @@ e-lib/emit {
         ((t*)rebMalloc(sizeof(t) * (n)))
 
 
-    #endif  /* REBOL_H_1020_0304 */
+    #endif  /* REVOLT_H_1020_0304 */
 }
 
 e-lib/write-emitted
@@ -931,10 +930,10 @@ e-lib/write-emitted
 ; The form of the API which is exported as a table is declared as a struct,
 ; but there has to be an instance of that struct filled with the actual
 ; pointers to the RL_XXX C functions to be able to hand it to clients.  Only
-; one instance of this table should be linked into Rebol.
+; one instance of this table should be linked into Revolt.
 
 e-table: (make-emitter
-    "REBOL Interface Table Singleton" output-dir/tmp-reb-lib-table.inc)
+    "REVOLT Interface Table Singleton" output-dir/tmp-reb-lib-table.inc)
 
 table-init-items: map-each-api [
     unspaced ["RL_" name]

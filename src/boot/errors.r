@@ -1,9 +1,9 @@
 REBOL [
-    System: "REBOL [R3] Language Interpreter and Run-time Environment"
+    System: "Revolt Language Interpreter and Run-time Environment"
     Title: "Standard Error IDs and Display Templates"
     Rights: {
         Copyright 2012 REBOL Technologies
-        Copyright 2012-2018 Rebol Open Source Contributors
+        Copyright 2012-2018 Revolt Open Source Contributors
         REBOL is a trademark of REBOL Technologies
     }
     License: {
@@ -126,7 +126,7 @@ Script: [
 
     break-not-continue: {Use BREAK/WITH when body is the breaking condition}
 
-    use-eval-for-eval:  {Use EVAL or APPLY on actions of arity > 0, not DO}
+    use-reeval-for-do:  {Use EVAL or APPLY on actions of arity > 0, not DO}
 
     limited-fail-input: {FAIL requires complex expressions to be in a GROUP!}
 

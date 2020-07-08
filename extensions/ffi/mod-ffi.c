@@ -2,27 +2,27 @@
 //  File: %mod-ffi.c
 //  Summary: "Foreign function interface main C file"
 //  Section: Extension
-//  Project: "Rebol 3 Interpreter and Run-time (Ren-C branch)"
+//  Project: "Revolt Language Interpreter and Run-time Environment"
 //  Homepage: https://github.com/metaeducation/ren-c/
 //
 //=////////////////////////////////////////////////////////////////////////=//
 //
 // Copyright 2012 Atronix Engineering
-// Copyright 2012-2017 Rebol Open Source Contributors
+// Copyright 2012-2017 Revolt Open Source Contributors
 // REBOL is a trademark of REBOL Technologies
 //
 // See README.md and CREDITS.md for more information.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
+// Licensed under the Lesser GPL, Version 3.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-// http://www.apache.org/licenses/LICENSE-2.0
+// https://www.gnu.org/licenses/lgpl-3.0.html
 //
 //=////////////////////////////////////////////////////////////////////////=//
 //
 
-#define REBOL_IMPLICIT_END  // don't require rebEND in API calls (C99 or C++)
+#define REVOLT_IMPLICIT_END  // don't require rebEND in API calls (C99 or C++)
 #include "sys-core.h"
 
 #include "tmp-mod-ffi.h"
@@ -44,7 +44,7 @@ static ffi_abi Abi_From_Word(const REBVAL *word) {
     // macro that injects rebEND, but need to use a plain C call and add our
     // own rebEND.
     //
-    ffi_abi abi = (ffi_abi)LIBREBOL_NOMACRO(rebUnboxInteger)(
+    ffi_abi abi = (ffi_abi)LIBREVOLT_NOMACRO(rebUnboxInteger)(
       "switch", rebQ(word), "[",
 
         "'default [", rebI(FFI_DEFAULT_ABI), "]",
@@ -498,7 +498,7 @@ REBNATIVE(get_at_pointer)
 // for GET-AT-POINTER should not deviate too far from GET.
 //
 // !!! Alloc_Value() doesn't currently prohibit nulled cells mechanically,
-// but libRebol doesn't allow them.  What should this API do?
+// but libRevolt doesn't allow them.  What should this API do?
 {
     FFI_INCLUDE_PARAMS_OF_GET_AT_POINTER;
 
