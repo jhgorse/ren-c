@@ -1059,7 +1059,6 @@ inline static REBFRM *Push_Continuation_With_Core(
 
         Push_Frame(out, subframe);
         subframe->varlist = CTX_VARLIST(c);
-        SET_SERIES_FLAG(subframe->varlist, STACK_LIFETIME);  // SPC() checks
         subframe->rootvar = CTX_ARCHETYPE(c);
         subframe->param = CTX_KEYS_HEAD(c);
         subframe->arg = FRM_ARGS_HEAD(subframe);

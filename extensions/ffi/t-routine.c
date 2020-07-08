@@ -852,13 +852,8 @@ REB_R Routine_Dispatcher(REBFRM *f)
     REBLEN i;
     for (i = 0; i < num_args; ++i) {
         uintptr_t off = cast(uintptr_t, *SER_AT(void*, arg_offsets, i));
-<<<<<<< HEAD
-        assert(off == 0 or off < SER_LEN(store));
-        *SER_AT(void*, arg_offsets, i) = SER_DATA(store) + off;
-=======
         assert(off == 0 or off < BIN_LEN(store));
-        *SER_AT(void*, arg_offsets, i) = SER_DATA_RAW(store) + off;
->>>>>>> Fix PARSE of string binary alias, eliminate SER_LEN()
+        *SER_AT(void*, arg_offsets, i) = BIN_AT(store, off);
     }
   }
 
