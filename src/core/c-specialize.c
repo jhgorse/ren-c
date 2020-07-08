@@ -91,7 +91,7 @@
 // frame if needed.
 //
 REBCTX *Make_Context_For_Action_Push_Partials(
-    const REBVAL *action,  // need ->binding, so can't just be a REBACT*
+    const RELVAL *action,  // need ->binding, so can't just be a REBACT*
     REBDSP lowest_ordered_dsp,  // caller can add refinement specializations
     struct Reb_Binder *opt_binder
 ){
@@ -221,7 +221,7 @@ REBCTX *Make_Context_For_Action_Push_Partials(
 // not absolute.
 //
 REBCTX *Make_Context_For_Action(
-    const REBVAL *action, // need ->binding, so can't just be a REBACT*
+    const RELVAL *action, // need ->binding, so can't just be a REBACT*
     REBDSP lowest_ordered_dsp,
     struct Reb_Binder *opt_binder
 ){
@@ -803,8 +803,12 @@ REBVAL *First_Unspecialized_Arg(REBVAL **opt_param_out, REBFRM *f)
 {
     REBACT *phase = FRM_PHASE(f);
     REBVAL *param = First_Unspecialized_Param(phase);
-    if (*opt_param_out)
+    if (opt_param_out)
         *opt_param_out = param;
+
+    if (param == nullptr)
+        return nullptr;
+
     REBLEN index = param - ACT_PARAMS_HEAD(phase);
     return FRM_ARGS_HEAD(f) + index;
 }
