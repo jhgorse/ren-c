@@ -36,8 +36,16 @@
 //
 REB_R Path_Executor(REBFRM *f)
 {
-    f->executor = nullptr;
-    return f->out;
+    // Right now the only thing the Path_Executor is set up to do is to
+    // propagate throws/errors (which all executors must be able to do)
+
+    assert(Is_Throwing(f));
+
+    if (f->out != f->prior->out)
+        Move_Value(f->prior->out, f->out);
+
+    TRASH_POINTER_IF_DEBUG(f->opt_label);  // !!! an assert checks--review
+    return R_THROWN;
 }
 
 
@@ -341,6 +349,7 @@ bool Eval_Path_Throws_Core(
         feed,
         flags | EVAL_FLAG_ALLOCATED_FEED
     );
+    INIT_F_EXECUTOR(pvs, &Path_Executor);
 
     SHORTHAND (v, pvs->feed->value, NEVERNULL(const RELVAL*));
     assert(NOT_END(*v));  // tested 0-length path previously
@@ -496,6 +505,7 @@ bool Eval_Path_Throws_Core(
         *label_out = pvs->opt_label;
 
     assert(not Is_Throwing(pvs));
+    INIT_F_EXECUTOR(pvs, nullptr);  // !!! new rule for drop frame
     Drop_Frame_Unbalanced(pvs);  // refinements may accrue on stack
     return false; // not thrown
 
@@ -608,6 +618,7 @@ REBNATIVE(pick)
     }
 
     DECLARE_END_FRAME (pvs, EVAL_MASK_DEFAULT);
+    INIT_F_EXECUTOR(pvs, &Path_Executor);
 
     Push_Frame(D_OUT, pvs);
     Move_Value(D_OUT, location);
@@ -628,6 +639,7 @@ REBNATIVE(pick)
     }
     else if (IS_END(r)) {
         assert(r == R_UNHANDLED);
+        Abort_Frame(pvs);
         fail (Error_Bad_Path_Pick_Raw(PVS_PICKER(pvs)));
     }
     else if (GET_CELL_FLAG(r, ROOT)) {  // API value
@@ -663,6 +675,7 @@ REBNATIVE(pick)
         panic ("Unsupported return value in Path Dispatcher");
     }
 
+    INIT_F_EXECUTOR(pvs, nullptr);
     Drop_Frame(pvs);
     return r;
 }
@@ -704,6 +717,7 @@ REBNATIVE(poke)
     }
 
     DECLARE_END_FRAME (pvs, EVAL_MASK_DEFAULT);
+    INIT_F_EXECUTOR(pvs, &Path_Executor);
 
     Push_Frame(D_OUT, pvs);
     Move_Value(D_OUT, location);
@@ -719,6 +733,7 @@ REBNATIVE(poke)
     switch (KIND_BYTE(r)) {
       case REB_0_END:
         assert(r == R_UNHANDLED);
+        Abort_Frame(pvs);  // must be topmost frame when failing
         fail (Error_Bad_Path_Poke_Raw(PVS_PICKER(pvs)));
 
       case REB_R_INVISIBLE:  // is saying it did the write already
@@ -730,9 +745,11 @@ REBNATIVE(poke)
 
       default:
         assert(false);  // shouldn't happen, complain in the debug build
+        Abort_Frame(pvs);  // must be topmost frame when failing
         fail (PVS_PICKER(pvs));  // raise error in release build
     }
 
+    INIT_F_EXECUTOR(pvs, nullptr);
     Drop_Frame(pvs);
 
     RETURN (ARG(value)); // return the value we got in
