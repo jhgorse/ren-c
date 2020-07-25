@@ -184,21 +184,6 @@ inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
 #endif
 
 
-inline static void Get_Frame_Label_Or_Blank(RELVAL *out, REBFRM *f) {
-    assert(Is_Action_Frame(f));
-    if (f->opt_label != NULL)
-        Init_Word(out, f->opt_label); // invoked via WORD! or PATH!
-    else
-        Init_Blank(out); // anonymous invocation
-}
-
-inline static const char* Frame_Label_Or_Anonymous_UTF8(REBFRM *f) {
-    assert(Is_Action_Frame(f));
-    if (f->opt_label != NULL)
-        return STR_UTF8(f->opt_label);
-    return "[anonymous]";
-}
-
 
 //=//// VARLIST CONSERVATION //////////////////////////////////////////////=//
 //
@@ -255,6 +240,56 @@ inline static void Conserve_Varlist(REBARR *varlist)
 
     LINK(varlist).reuse = TG_Reuse;
     TG_Reuse = varlist;
+}
+
+
+// When Push_Action() happens, it sets f->original, but it's guaranteed to be
+// null if an action is not running.  This is tested via a macro because the
+// debug build doesn't do any inlining, and it's called often.
+//
+#define Is_Action_Frame(f) \
+    ((f)->original != nullptr)
+
+
+// While a function frame is fulfilling its arguments, the `f->param` will
+// be pointing to a typeset.  The invariant that is maintained is that
+// `f->param` will *not* be a typeset when the function is actually in the
+// process of running.  (So no need to set/clear/test another "mode".)
+//
+// Some cases in debug code call this all the way up the call stack, and when
+// the debug build doesn't inline functions it's best to use as a macro.
+
+#define Is_Action_Frame_Fulfilling_Unchecked(f) \
+    NOT_END((f)->param)
+
+inline static bool Is_Action_Frame_Fulfilling(REBFRM *f) {
+    assert(Is_Action_Frame(f));
+    return Is_Action_Frame_Fulfilling_Unchecked(f);
+}
+
+
+inline static REBCTX *Context_For_Frame_May_Manage(REBFRM *f) {
+    assert(not Is_Action_Frame_Fulfilling(f));
+    SET_SERIES_FLAG(f->varlist, MANAGED);
+    return CTX(f->varlist);
+}
+
+
+//=//// FRAME LABELING ////////////////////////////////////////////////////=//
+
+inline static void Get_Frame_Label_Or_Blank(RELVAL *out, REBFRM *f) {
+    assert(Is_Action_Frame(f));
+    if (f->opt_label != NULL)
+        Init_Word(out, f->opt_label); // invoked via WORD! or PATH!
+    else
+        Init_Blank(out); // anonymous invocation
+}
+
+inline static const char* Frame_Label_Or_Anonymous_UTF8(REBFRM *f) {
+    assert(Is_Action_Frame(f));
+    if (f->opt_label != NULL)
+        return STR_UTF8(f->opt_label);
+    return "[anonymous]";
 }
 
 
@@ -435,6 +470,17 @@ inline static void UPDATE_EXPRESSION_START(REBFRM *f) {
 
 inline static void Abort_Frame(REBFRM *f) {
     //
+    // If a frame is aborted, then we allow its API handles to leak.
+    //
+    REBNOD *n = f->alloc_value_list;
+    while (n != NOD(f)) {
+        REBARR *a = ARR(n);
+        n = LINK(n).custom.node;
+        TRASH_CELL_IF_DEBUG(ARR_SINGLE(a));
+        GC_Kill_Series(SER(a));
+    }
+    TRASH_POINTER_IF_DEBUG(f->alloc_value_list);
+
     // Abort_Frame() handles any work that wouldn't be done done naturally by
     // feeding a frame to its natural end.
     // 
@@ -505,6 +551,16 @@ inline static void Drop_Frame_Core(REBFRM *f) {
     assert(TG_Jump_List == nullptr or TG_Jump_List->frame != f);
 
     assert(TG_Top_Frame == f);
+
+    REBNOD *n = f->alloc_value_list;
+    while (n != NOD(f)) {
+        REBARR *a = ARR(n);
+      #if defined(DEBUG_STDIO_OK)
+        printf("API handle was allocated but not freed, panic'ing leak\n");
+      #endif
+        panic (a);
+    }
+
     TG_Top_Frame = f->prior;
     Free_Frame_Internal(f);
 }
@@ -564,6 +620,7 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
     f->varlist = nullptr;
 
     f->took_hold = false;  // !!! Maybe should be an EVAL_FLAG, see notes
+    f->alloc_value_list = NOD(f);  // doubly link list, terminates in `f`
 }
 
 #define DECLARE_FRAME(name,feed,flags) \
