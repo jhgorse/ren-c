@@ -1111,7 +1111,7 @@ foreach: emulate [
 ]
 
 loop: emulate [denuller :loop]
-repeat: emulate [denuller :repeat]
+repeat: emulate [denuller :count-up]
 forall: emulate [denuller :iterate]
 forskip: emulate [denuller :iterate-skip]
 
