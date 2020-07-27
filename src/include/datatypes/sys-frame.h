@@ -1293,6 +1293,7 @@ inline static REBFRM *Push_Continuation_With_Core(
     do { \
         Push_Continuation_With(frame_->out, \
             frame_, EVAL_FLAG_DELEGATE_CONTROL, (branch), END_NODE); \
+        STATE_BYTE(frame_) = 1;  /* STATE_BYTE() = 0 means initial_entry */ \
         return R_CONTINUATION; \
     } while (0)
 
@@ -1300,18 +1301,21 @@ inline static REBFRM *Push_Continuation_With_Core(
     do { \
         Push_Continuation_With(frame_->out, \
             frame_, EVAL_FLAG_DELEGATE_CONTROL, (branch), (with)); \
+        STATE_BYTE(frame_) = 1;  /* STATE_BYTE() = 0 means initial_entry */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define CONTINUE(branch) \
     do { \
         Push_Continuation_With(frame_->out, frame_, 0, (branch), END_NODE); \
+        assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define CONTINUE_WITH(branch,with) \
     do { \
         Push_Continuation_With(frame_->out, frame_, 0, (branch), (with)); \
+        assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 
@@ -1319,6 +1323,7 @@ inline static REBFRM *Push_Continuation_With_Core(
     do { \
         Push_Continuation_With(frame_->out, \
             frame_, EVAL_FLAG_DISPATCHER_CATCHES, (branch), END_NODE); \
+        assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 
@@ -1326,6 +1331,7 @@ inline static REBFRM *Push_Continuation_With_Core(
     do { \
         Push_Continuation_With(frame_->out, \
             frame_, EVAL_FLAG_DISPATCHER_CATCHES, (branch), (with)); \
+        assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 

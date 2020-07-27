@@ -1109,8 +1109,8 @@ REBNATIVE(case)
     // of crashing or erroring the frame that's just there would stay there.
     //
     INIT_F_EXECUTOR(f, &Finished_Executor);
+    STATE_BYTE(f) = 1;  // !!! Currently can't leave a 0 byte w/push below
 
-    D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
     Push_Continuation_With_Core(
         D_OUT,
         f,
@@ -1119,10 +1119,13 @@ REBNATIVE(case)
         F_SPECIFIER(f),  // branch_specifier
         END_NODE  // with
     );
+    D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
     return R_CONTINUATION;
   }
 
   branch_was_evaluated: {
+    STATE_BYTE(f) = 0;  // !!! Have to put this back by current rules
+
     if (GET_CELL_FLAG(D_OUT, OUT_MARKED_STALE)) {
         assert(!"Stale value seen, should not be possible here.");
         fail ("Stale value seen, should not be possible here.");
