@@ -122,16 +122,16 @@ void Unplug_Stack(
 ){
     assert(f == FS_TOP);
 
-    assert(Is_Action_Frame(f));  // only actions can initiate unpluggings
-    assert(not Is_Action_Frame_Fulfilling(f));  // ...and just running ones
-
-    assert(Is_Action_Frame(base));  // ...same goes for the base
-    assert(not Is_Action_Frame_Fulfilling(base));  // ...etc.
-
     REBFRM *temp = f;
     while (true) {
-        if (GET_EVAL_FLAG(temp, ROOT_FRAME))
+        if (GET_EVAL_FLAG(temp, ROOT_FRAME)) {
+            //
+            // !!! Handling errors in stackless is still a work in progress;
+            // avoid confusion on this case by asserting for now.
+            //
+            assert(!"Can't yield across non-continuation-frame");
             fail ("Cannot yield across frame that's not a continuation");
+        }
 
         if (temp->out == base->out) {
             //
@@ -218,12 +218,6 @@ void Unplug_Stack(
 void Replug_Stack(REBFRM *f, REBFRM *base, REBVAL *plug) {
     assert(base == FS_TOP);  // currently can only plug in atop topmost frame
 
-    assert(Is_Action_Frame(base));  // only actions can initiate repluggings
-    assert(not Is_Action_Frame_Fulfilling(base));  // ...and just running ones
-
-    assert(Is_Action_Frame(f));  // ...same goes for the plug going in
-    assert(not Is_Action_Frame_Fulfilling(f));  // ...etc.
-
     REBFRM *temp = f;
     while (true) {
         //
@@ -281,7 +275,7 @@ void Replug_Stack(REBFRM *f, REBFRM *base, REBVAL *plug) {
         DS_DROP();
     };
 
-    Init_Blank(plug);  // no longer needed, let it be GC'd
+    TRASH_CELL_IF_DEBUG(plug);  // no longer needed, let it be GC'd
 
     TG_Top_Frame = f;  // make the jump deeper into the stack official...
 }

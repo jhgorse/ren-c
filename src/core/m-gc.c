@@ -828,6 +828,33 @@ static void Mark_Frame_Stack_Deep(void)
 
 
 //
+//  Mark_Tasks: C
+//
+static void Mark_Tasks(void)
+{
+    if (not PG_Tasks)
+        return;
+
+    REBTSK *task = PG_Tasks;
+    do {
+        // Note: the task->go_frame is above the task->plug_frame in the
+        // stack, so it will be marked when the plug_frame is marked.
+
+        if (task->plug_frame) {
+            Queue_Mark_Node_Deep(task->plug_frame);
+            Queue_Mark_Opt_End_Cell_Deep(&task->plug);
+        }
+        else
+            assert(IS_TRASH_DEBUG(&task->plug));
+
+        Propagate_All_GC_Marks();
+
+        task = task->next;
+    } while (task != PG_Tasks);  // circular list
+}
+
+
+//
 //  Sweep_Series: C
 //
 // Scans all series nodes (REBSER structs) in all segments that are part of
@@ -1155,6 +1182,7 @@ REBLEN Recycle_Core(bool shutdown, REBSER *sweeplist)
         Mark_Data_Stack();
         Mark_Guarded_Nodes();
         Mark_Frame_Stack_Deep();
+        Mark_Tasks();
         Mark_Devices_Deep();
     }
 

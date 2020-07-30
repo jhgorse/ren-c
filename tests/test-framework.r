@@ -46,28 +46,25 @@ make object! compose [
         ]
 
         let result
+        let error
         case [
-            error? trap [test-block: as block! load source] [
-                "cannot load test source"
+            error: trap [test-block: as block! load source] [
+                "cannot load test source:" newline
+                form error
             ]
 
             elide (
                 print mold test-block  ; !!! make this an option
 
-                result: entrap test-block
+                [error result]: trap test-block
                 recycle
             )
 
-            null? :result [
-                "test returned null"
-            ]
-            error? :result [
-                spaced ["error" any [to text! result/id | "w/no ID"]]
+            error [
+                spaced ["error" any [to text! error/id | "w/no ID"]]
             ]
 
-            elide (result: first result)
-
-            void? :result [
+            void? get/any 'result [
                 "test returned void"
             ]
             not logic? :result [
