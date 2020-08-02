@@ -7,7 +7,7 @@
 //=////////////////////////////////////////////////////////////////////////=//
 //
 // Copyright 2012 REBOL Technologies
-// Copyright 2012-2019 Revolt Open Source Contributors
+// Copyright 2012-2020 Revolt Open Source Contributors
 // REBOL is a trademark of REBOL Technologies
 //
 // See README.md and CREDITS.md for more information.
@@ -34,8 +34,7 @@
 // Very little work is done in C.  For instance, the command line arguments
 // are processed using PARSE by Rebol code that is embedded into the
 // executable as compressed bytes.  And the majority of the console behavior
-// is defined by Rebol code in %extensions/console (though it has some of
-// its own C to handle things like SIGINT for Ctrl-C handling).
+// is defined by Rebol code in %extensions/console.
 //
 
 #include <stdlib.h>
@@ -175,6 +174,172 @@
 #endif
 
 
+#ifdef TO_WINDOWS
+
+    #undef _WIN32_WINNT  // https://forum.rebol.info/t/326/4
+    #define _WIN32_WINNT 0x0501  // Minimum API target: WinXP
+    #define WIN32_LEAN_AND_MEAN  // trim down the Win32 headers
+    #include <windows.h>
+
+    #undef IS_ERROR  // %windows.h defines this, but so does %sys-core.h
+
+#elif defined(TO_EMSCRIPTEN)
+    //
+    // The emscripten build sets up the handling of rebHalt() differently
+    //
+    #error "%main.c included in Emscripten build - should not happen"
+#else
+
+    #include <signal.h>  // needed for SIGINT, SIGTERM, SIGHUP
+
+#endif
+
+
+//=//// USER-INTERRUPT/HALT HANDLING (Ctrl-C, Escape, etc.) ///////////////=//
+//
+// There's clearly contention for what a user-interrupt key sequence should
+// be, given that "Ctrl-C" is copy in GUI applications.  Yet handling escape
+// is not necessarily possible on all platforms and situations.
+//
+// For console applications, we assume that the program starts with user
+// interrupting enabled by default...so we have to ask for it not to be when
+// it would be bad to have the Revolt stack interrupted--during startup, or
+// when in the "kernel" of the host console.
+//
+// (Note: If halting is done via Ctrl-C, technically it may be set to be
+// ignored by a parent process or context, in which case conventional wisdom
+// is that we should not be enabling it ourselves.  Review.)
+//
+
+bool halting_enabled = false;
+
+#if defined(TO_WINDOWS)  //=//// WINDOWS ////////////////////////////////=//
+
+// Windows handling is fairly simplistic--this is the callback passed to
+// `SetConsoleCtrlHandler()`.  The most annoying thing about cancellation in
+// windows is the limited signaling possible in the terminal's readline.
+//
+BOOL WINAPI Handle_Break(DWORD dwCtrlType)
+{
+    switch (dwCtrlType) {
+      case CTRL_C_EVENT:
+      case CTRL_BREAK_EVENT:
+        rebHalt();
+        return TRUE;  // TRUE = "we handled it"
+
+      case CTRL_CLOSE_EVENT:
+        //
+        // !!! Theoretically the close event could confirm that the user
+        // wants to exit, if there is possible unsaved state.  As a UI
+        // premise this is probably less good than persisting the state
+        // and bringing it back.
+        //
+      case CTRL_LOGOFF_EVENT:
+      case CTRL_SHUTDOWN_EVENT:
+        //
+        // They pushed the close button, did a shutdown, etc.  Exit.
+        //
+        // !!! Review arbitrary "100" exit code here.
+        //
+        exit(100);
+
+      default:
+        return FALSE;  // FALSE = "we didn't handle it"
+    }
+}
+
+BOOL WINAPI Handle_Nothing(DWORD dwCtrlType)
+{
+    if (dwCtrlType == CTRL_C_EVENT)
+        return TRUE;
+
+    return FALSE;
+}
+
+void Disable_Halting(void)
+{
+    assert(halting_enabled);
+
+    SetConsoleCtrlHandler(Handle_Break, FALSE);
+    SetConsoleCtrlHandler(Handle_Nothing, TRUE);
+
+    halting_enabled = false;
+}
+
+void Enable_Halting(void)
+{
+    assert(not halting_enabled);
+
+    SetConsoleCtrlHandler(Handle_Break, TRUE);
+    SetConsoleCtrlHandler(Handle_Nothing, FALSE);
+
+    halting_enabled = true;
+}
+
+#else  //=//// POSIX, LINUX, MAC, etc. ////////////////////////////////////=//
+
+// SIGINT is the interrupt usually tied to "Ctrl-C".  Note that if you use
+// just `signal(SIGINT, Handle_Signal);` as R3-Alpha did, this means that
+// blocking read() calls will not be interrupted with EINTR.  One needs to
+// use sigaction() if available...it's a slightly newer API.
+//
+// http://250bpm.com/blog:12
+//
+// !!! What should be done about SIGTERM ("polite request to end", default
+// unix kill) or SIGHUP ("user's terminal disconnected")?  Is it useful to
+// register anything for these?  R3-Alpha did, and did the same thing as
+// SIGINT.  Not clear why.  It did nothing for SIGQUIT:
+//
+// SIGQUIT is used to terminate a program in a way that is designed to
+// debug it, e.g. a core dump.  Receiving SIGQUIT is a case where
+// program exit functions like deletion of temporary files may be
+// skipped to provide more state to analyze in a debugging scenario.
+//
+// SIGKILL is the impolite signal for shutdown; cannot be hooked/blocked
+
+static void Handle_Signal(int sig)
+{
+    UNUSED(sig);
+    rebHalt();
+}
+
+struct sigaction old_action;
+
+void Disable_Halting(void)
+{
+    assert(halting_enabled);
+
+    sigaction(SIGINT, nullptr, &old_action); // fetch current handler
+    if (old_action.sa_handler != SIG_IGN) {
+        struct sigaction new_action;
+        new_action.sa_handler = SIG_IGN;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_flags = 0;
+        sigaction(SIGINT, &new_action, nullptr);
+    }
+
+    halting_enabled = false;
+}
+
+void Enable_Halting(void)
+{
+    assert(not halting_enabled);
+
+    if (old_action.sa_handler != SIG_IGN) {
+        struct sigaction new_action;
+        new_action.sa_handler = &Handle_Signal;
+        sigemptyset(&new_action.sa_mask);
+        new_action.sa_flags = 0;
+        sigaction(SIGINT, &new_action, nullptr);
+    }
+
+    halting_enabled = true;
+}
+
+#endif  //=///////////////////////////////////////////////////////////////=//
+
+
+
 //=//// MAIN ENTRY POINT //////////////////////////////////////////////////=//
 //
 // Using a main() entry point for a console program (as opposed to WinMain())
@@ -269,6 +434,8 @@ int main(int argc, char *argv_ansi[])
     if (rebNot("action?", rebQ(main_startup), rebEND))
         rebJumps("PANIC-VALUE", rebQ(main_startup), rebEND);  // terminates
 
+    Enable_Halting();
+
     // This runs the MAIN-STARTUP, which returns *requests* to execute
     // arbitrary code by way of its return results.  The ENTRAP is thus here
     // to intercept bugs *in MAIN-STARTUP itself*.
@@ -286,14 +453,6 @@ int main(int argc, char *argv_ansi[])
     bool run_console = rebDid("first", trapped, rebEND);  // entrap's output
     rebRelease(trapped);  // don't need the outer block any more
 
-    // !!! For the moment, the CONSOLE extension does all the work of running
-    // usermode code or interpreting exit codes.  This requires significant
-    // logic which is reused by the debugger, which ranges from the managing
-    // of Ctrl-C enablement and disablement (and how that affects the ability
-    // to set unix flags for unblocking file-I/O) to protecting against other
-    // kinds of errors.  Hence there is a /PROVOKE refinement to CONSOLE
-    // which feeds it an instruction, as if the console gave it to itself.
-
     int exit_status;
     if (run_console) {
         REBVAL *result = rebValue("console", rebEND);
@@ -304,6 +463,8 @@ int main(int argc, char *argv_ansi[])
 
     const bool clean = false;  // process exiting, not necessary
     rebShutdown(clean);  // Note: debug build runs a clean shutdown anyway
+
+    Disable_Halting();
 
     return exit_status;  // http://stackoverflow.com/q/1101957/
 }
