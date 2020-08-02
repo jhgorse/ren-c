@@ -112,6 +112,16 @@ struct Reb_Task {
     RELVAL plug;
     REBFRM *plug_frame;
 
+    // !!! The idea of tasks having a channel that they send their results
+    // back on is an experimental concept.  This is done so that "raw" blocks
+    // can be evaluated with nothing above them on the stack and yet still
+    // send the result over a channel.  The result is quoted because NULL
+    // could not otherwise be sent.  It's primitive but in service to the
+    // console during a primordial phase of the debugger.
+    //
+    RELVAL channel;
+    bool debuggable;
+
     struct Reb_Task *next;
 };
 

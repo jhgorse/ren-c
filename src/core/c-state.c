@@ -350,7 +350,7 @@ void Assert_State_Balanced_Debug(
     assert(s->mold_buf_size == STR_SIZE(STR(MOLD_BUF)));
     assert(s->mold_loop_tail == ARR_LEN(TG_Mold_Stack));
 
-    assert(s->saved_sigmask == Eval_Sigmask);  // !!! is this always true?
+/*    assert(s->saved_sigmask == Eval_Sigmask);  // !!! is this always true? */
 }
 
 #endif

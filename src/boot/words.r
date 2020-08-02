@@ -78,6 +78,9 @@ rebol
 
 system
 
+; Field in "channels" for where the data is put
+buffer
+
 ; REFLECTORS
 ;
 ; These words are used for things like REFLECT SOME-FUNCTION 'BODY, which then

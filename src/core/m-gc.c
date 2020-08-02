@@ -847,6 +847,8 @@ static void Mark_Tasks(void)
         else
             assert(IS_TRASH_DEBUG(&task->plug));
 
+        Queue_Mark_Opt_End_Cell_Deep(&task->channel);
+
         Propagate_All_GC_Marks();
 
         task = task->next;

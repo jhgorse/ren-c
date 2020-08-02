@@ -201,27 +201,6 @@ void Enable_Halting(void)
 #endif  //=///////////////////////////////////////////////////////////////=//
 
 
-
-// This is called when either the console is running some untrusted skin code
-// for its own implementation, or when it wants to execute code on the user's
-// behalf.  If the code is on the user's behalf, then any tracing or debug
-// hooks will have been enabled before the rebRescue() call invoking this.
-//
-//
-static REBVAL *Run_Sandboxed_Group(REBVAL *group) {
-    //
-    // DON'T ADD ANY MORE LIBREVOLT CODE HERE.  If this is a user-requested
-    // evaluation, then any extra libRevolt code run here will wind up being
-    // shown in a TRACE.  The only thing that's acceptable to see in the
-    // backtrace is the GROUP! itself that we are running.  (If we didn't
-    // want that, getting rid of it would take some magic).
-    //
-    // So don't add superfluous libRevolt calls here, except to debug.
-    //
-    return rebQuoteInterruptible(group, rebEND);  // ownership gets proxied
-}
-
-
 //
 //  export console: native [
 //
@@ -288,7 +267,7 @@ REBNATIVE(console)
     REBVAL *requests = rebValueQ("make-chan/capacity 1", rebEND);
 
     rebElideQ(
-        "go [",
+        "go/kernel [",
             "console-impl",
             requests,
             responses,
@@ -309,7 +288,6 @@ REBNATIVE(console)
         // for the user (or on behalf of the console skin) are done in
         // Run_Sandboxed_Group().
         //
-
         code = rebValueQ("receive-chan", requests, rebEND);
 
         if (rebDidQ("integer?", code, rebEND))
@@ -321,10 +299,10 @@ REBNATIVE(console)
         }
 
         bool debuggable = rebDidQ("block?", code, rebEND);
-        REBVAL *group;
+        REBVAL *block;
 
         if (debuggable) {
-            group = rebValueQ("as group!", code, rebEND);  // to run w/o DO
+            block = rebValueQ(code, rebEND);  // release w/o affecting `code`
 
             // Restore custom DO and APPLY hooks, but only if it was a GROUP!
             // initially (indicating running code initiated by the user).
@@ -339,7 +317,7 @@ REBNATIVE(console)
             Trace_Depth = Save_Trace_Depth;
         }
         else {
-            group = rebValueQ(code, rebEND);  // release w/o affecting `code`
+            block = rebValueQ("as block!", code, rebEND);  // to run w/o DO
         }
 
         rebRelease(code);
@@ -350,8 +328,18 @@ REBNATIVE(console)
         // condition or a reason to fall back to the default skin).
         //
         Enable_Halting();
-        REBVAL *result = rebRescue(cast(REBDNG*, &Run_Sandboxed_Group), group);
-        rebRelease(group);  // Note: does not release `code`
+
+        REBVAL *result;
+        if (debuggable)
+            result = rebValue(
+                "receive-chan go/channel", block, rebEND
+            );
+        else
+            result = rebValue(
+                "receive-chan go/channel/kernel", block, rebEND
+            );
+
+        rebRelease(block);  // Note: does not release `code`
         Disable_Halting();
 
         rebElideQ("send-chan", responses, result, rebEND);

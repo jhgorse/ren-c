@@ -275,6 +275,23 @@ bool Trampoline_Throws(REBFRM *f)
                 //
                 REBTSK *done_task = PG_Tasks;
                 Circularly_Unlink_Task(done_task);
+
+                if (NOT_END(&done_task->channel)) {
+                    //
+                    // !!! We have to be careful here, because we're in the
+                    // trampoline...so we can't call SEND-CHAN.
+                    //
+                    REBCTX *ctx = VAL_CONTEXT(&done_task->channel);
+                    REBLEN n = Find_Canon_In_Context(
+                        ctx,
+                        Canon(SYM_BUFFER),
+                        true   // !!! "always"?
+                    );
+                    REBVAL *buffer = CTX_VAR(ctx, n);
+                    Quotify(f->out, 1);
+                    Append_Value(VAL_ARRAY(buffer), f->out);
+                }
+
                 FREE(REBTSK, done_task);
 
                 Init_Unreadable_Void(f->out);  // Blockers shouldn't read
@@ -324,14 +341,35 @@ bool Trampoline_Throws(REBFRM *f)
                 // happen is when the main thread is in a block on a SEND-CHAN
                 // or RECEIVE-CHAN.  Rethink.
                 //
-                REBVAL *out = f->out;
+                REBCTX *error = Error_No_Catch_For_Throw(f->out);
                 Abort_Frame(f);
 
                 REBTSK *failed_task = PG_Tasks;
                 Circularly_Unlink_Task(failed_task);
+
+                if (NOT_END(&failed_task->channel)) {
+                    //
+                    // !!! We have to be careful here, because we're in the
+                    // trampoline...so we can't call SEND-CHAN.
+                    //
+                    REBCTX *ctx = VAL_CONTEXT(&failed_task->channel);
+                    REBLEN n = Find_Canon_In_Context(
+                        ctx,
+                        Canon(SYM_BUFFER),
+                        true   // !!! "always"?
+                    );
+                    REBVAL *buffer = CTX_VAR(ctx, n);
+                    Append_Value(VAL_ARRAY(buffer), CTX_ARCHETYPE(error));
+                    error = nullptr;
+                }
+
                 FREE(REBTSK, failed_task);
 
-                fail (Error_No_Catch_For_Throw(out));
+                if (error)
+                    fail (error);
+
+                f = FS_TOP;
+                goto loop;
             }
 
             assert(NOT_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // always kept
@@ -395,8 +433,11 @@ bool Trampoline_Throws(REBFRM *f)
 //  go: native [
 //      {Start a new independent coroutine stack}
 //
-//      return: [void!]
+//      return: "If /CHANNEL is used, channel w/quoted result or error"
+//          [void! object!]
 //      source [block! action!]
+//      /kernel "Do not permit debugging of this goroutine thread"
+//      /channel "Return quoted result of evaluation over a returned channel"
 //  ]
 //
 REBNATIVE(go)
@@ -459,6 +500,24 @@ REBNATIVE(go)
     task->go_frame = f;
     CLEAR_EVAL_FLAG(f, ROOT_FRAME);
 
+    Prep_Non_Stack_Cell(&task->channel);
+    if (REF(channel)) {
+        REBVAL *chan = rebValue("make-chan", rebEND);
+        Move_Value(D_OUT, chan);
+        Move_Value(&task->channel, chan);
+        rebRelease(chan);
+    }
+    else {
+        Init_Void(D_OUT);
+        SET_END(&task->channel);
+    }
+
+    // !!! Theorized granularity of debugging is on a per-Task basis.  The
+    // "main thread" is thus not something that the debugger would step
+    // through, nor are service routines in the console itself.
+    //
+    task->debuggable = not REF(kernel);
+
     // There's a sanity check that the caller of unplug isn't in 0 state,
     // so make sure we aren't.
     //
@@ -469,7 +528,7 @@ REBNATIVE(go)
 
     Circularly_Link_Task(task);
 
-    return Init_Void(D_OUT);
+    return D_OUT;  // OBJECT! if /CHANNEL, else VOID!
   }
 }
 
