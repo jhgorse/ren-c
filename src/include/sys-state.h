@@ -122,6 +122,11 @@ struct Reb_Task {
     RELVAL channel;
     bool debuggable;
 
+    // !!! Per-task sigmask; this keeps the global sigmask (we are in stackful
+    // API, don't interrupt!) from affecting all tasks.
+    //
+    REBFLGS sigmask;
+
     struct Reb_Task *next;
 };
 

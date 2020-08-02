@@ -518,6 +518,12 @@ REBNATIVE(go)
     //
     task->debuggable = not REF(kernel);
 
+    // Start off being willing to recycle, Ctrl-C, etc.  (This might not be
+    // the best idea, e.g. a task might ask not to allow recycles because it
+    // has a good reason, so if another task says it's okay, might be bad.)
+    //
+    task->sigmask = ALL_BITS;
+
     // There's a sanity check that the caller of unplug isn't in 0 state,
     // so make sure we aren't.
     //

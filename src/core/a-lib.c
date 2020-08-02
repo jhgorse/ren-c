@@ -842,11 +842,11 @@ static void Run_Va_May_Fail_Core(
     // the intereter will be okay, it's like any line in your program could
     // have half-run.  Review a holistic answer.
     //
-    REBFLGS saved_sigmask = Eval_Sigmask;
+    REBFLGS saved_sigmask = *Sigmask_Ref();
     if (interruptible)
-        Eval_Sigmask |= SIG_HALT;  // enable
+        *Sigmask_Ref() |= SIG_HALT;  // enable
     else
-        Eval_Sigmask &= ~SIG_HALT;  // disable
+        *Sigmask_Ref() &= ~SIG_HALT;  // disable
 
     DECLARE_VA_FEED (feed, p, vaptr, feed_flags);
     bool threw = Do_Feed_To_End_Maybe_Stale_Throws(
@@ -856,7 +856,7 @@ static void Run_Va_May_Fail_Core(
     );
 
     // (see also Reb_State->saved_sigmask RE: if a longjmp happens)
-    Eval_Sigmask = saved_sigmask;
+    *Sigmask_Ref() = saved_sigmask;
 
     if (threw) {
         //

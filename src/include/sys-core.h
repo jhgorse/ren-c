@@ -402,6 +402,21 @@ enum rebol_signals {
     SIG_EVENT_PORT = 1 << 3
 };
 
+// Just as each thread has its own sigmask in Unix, each Task has its own
+// sigmask.  So one might be willing to take a Ctrl-C, while another might
+// not be willing to.
+//
+// !!! This is a work in progress, just trying to get something going where
+// some tasks are interruptbile while others are not.
+//
+inline static REBFLGS *Sigmask_Ref(void) {
+    if (PG_Tasks and PG_Tasks->plug_frame == nullptr) {  // plugged in
+        return &PG_Tasks->sigmask;
+    }
+
+    return &Eval_Sigmask;
+}
+
 inline static void SET_SIGNAL(REBFLGS f) { // used in %sys-series.h
     Eval_Signals |= f;
     Eval_Count = 1;
