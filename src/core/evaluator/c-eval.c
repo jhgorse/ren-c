@@ -1682,3 +1682,26 @@ REB_R Lookahead_Executor(REBFRM *f)
     INIT_F_EXECUTOR(f, &Finished_Executor);
     return f->out;  // not thrown
 }
+
+
+//
+//  evaluator: native [
+//      {Dummy Function for frames that are just evaluating a block}
+//  ]
+//
+REBNATIVE(evaluator)
+//
+// !!! The idea of not giving FRAME!s to non-action levels is not viable if
+// the debugger is going to have a language to speak about all frames.  But
+// since FRAME! is an ANY-CONTEXT!, those frames have to be for some action
+// with some parameterization.  This may suggest that EVALUATOR actually
+// has something like the BLOCK! that is being asked to evaluate...it could
+// be that "executors" are actually natives.
+//
+// While this is all being figured out, this dummy function is put into the
+// reified forms of non-action frames.
+{
+    INCLUDE_PARAMS_OF_EVALUATOR;
+
+    fail ("EVALUATOR should never be run!");
+}

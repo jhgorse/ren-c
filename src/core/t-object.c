@@ -770,7 +770,7 @@ REBTYPE(Context)
             return Init_Integer(D_OUT, line); }
 
           case SYM_LABEL: {
-            if (not f->opt_label)
+            if (not Is_Action_Frame(f) or not f->opt_label)
                 return nullptr;
             return Init_Word(D_OUT, f->opt_label); }
 
@@ -781,10 +781,29 @@ REBTYPE(Context)
             //
             // Only want action frames (though `pending? = true` ones count).
             //
+            // !!! This restriction likely needs to be gotten rid of
+
+            // !!! For the moment, we consider all ROOT_FRAMEs to end the
+            // stack.  However, while not all natives are stackless, this is
+            // going to be a problem.  Even after stackless, making the
+            // apparent stack hide other stacks could be a problem.  Review.
+            //
+            if (GET_EVAL_FLAG(f, ROOT_FRAME))
+                return nullptr;
+
             REBFRM *parent = f;
             while ((parent = parent->prior) != FS_BOTTOM) {
-                if (not Is_Action_Frame(parent))
-                    continue;
+                //
+                // !!! Historically we don't want to give partially-filled
+                // frames to a caller.  There's a danger of them seeing
+                // uninitialized arguments, or worse--an argument that is in
+                // mid-evaluation.  Here we deceptively make it appear those
+                // frames don't exist...which isn't all that untruthful, as
+                // the function hasn't actually started executing.
+                //
+                if (Is_Action_Frame(parent))
+                    if (Is_Action_Frame_Fulfilling(parent))
+                        continue;
 
                 REBCTX* ctx_parent = Context_For_Frame_May_Manage(parent);
                 RETURN (CTX_ARCHETYPE(ctx_parent));

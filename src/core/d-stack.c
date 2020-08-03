@@ -224,6 +224,9 @@ REBNATIVE(pending_q)
 
     REBFRM *f = CTX_FRAME_MAY_FAIL(frame_ctx);
 
+    if (not Is_Action_Frame(f))
+        return Init_False(D_OUT);
+
     if (Is_Action_Frame_Fulfilling(f))
         return Init_True(D_OUT);
 

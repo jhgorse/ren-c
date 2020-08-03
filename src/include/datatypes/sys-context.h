@@ -193,9 +193,7 @@ inline static REBFRM *CTX_FRAME_IF_ON_STACK(REBCTX *c) {
     assert(NOT_SERIES_INFO(CTX_VARLIST(c), INACCESSIBLE));
     assert(IS_FRAME(CTX_ARCHETYPE(c)));
 
-    REBFRM *f = FRM(keysource);
-    assert(f->original); // inline Is_Action_Frame() to break dependency
-    return f;
+    return FRM(keysource);
 }
 
 inline static REBFRM *CTX_FRAME_MAY_FAIL(REBCTX *c) {

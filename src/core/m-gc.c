@@ -739,8 +739,18 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
     Queue_Mark_Opt_End_Cell_Deep(&f->feed->lookback);
 
     assert(Is_Action_Frame(f) == (f->original != nullptr));
-    if (not f->original)  // e.g. signals not Is_Action_Frame()
+    if (not f->original) {  // e.g. signals not Is_Action_Frame()
+        //
+        // !!! The only way non-action frames get varlists is the
+        // Context_For_Frame_May_Manage() routine, always managed.  But...
+        // for some reason the f->original can be null for a normal varlist
+        // and still wind up here.  Review why.
+        //
+        if (f->varlist and GET_SERIES_FLAG(f->varlist, MANAGED))
+            Queue_Mark_Node_Deep(CTX(f->varlist));
+
         return;  // ...so other pointers might be uninitialized
+    }
 
     Queue_Mark_Node_Deep(f->original);  // never nullptr
 

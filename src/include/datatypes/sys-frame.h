@@ -268,8 +268,48 @@ inline static bool Is_Action_Frame_Fulfilling(REBFRM *f) {
 
 
 inline static REBCTX *Context_For_Frame_May_Manage(REBFRM *f) {
-    assert(not Is_Action_Frame_Fulfilling(f));
-    SET_SERIES_FLAG(f->varlist, MANAGED);
+    //
+    // !!! Traditionally, FRAME! could only exist for ACTION!s.  A non-action
+    // frame could be modeled as a call to the evaluator on a BLOCK!.  The
+    // issue is that we need some reified object so that the debugger can
+    // point to a frame level and say "step there".  This is a beginning of
+    // making it possible to do.
+    //
+    if (Is_Action_Frame(f)) {
+        assert(f->varlist and not Is_Action_Frame_Fulfilling(f));
+        SET_SERIES_FLAG(f->varlist, MANAGED);  // may be set already
+    }
+    else if (not f->varlist) {
+        //
+        // !!! For now, we don't worry about the cost of allocating a normal
+        // parameter list on demand for EVALUATOR.
+        //
+        assert(ACT_NUM_PARAMS(NATIVE_ACT(evaluator)) == 1);
+        f->varlist = Make_Array_Core(
+            2,
+            SERIES_MASK_VARLIST | SERIES_FLAG_MANAGED
+        );
+        INIT_LINK_KEYSOURCE(f->varlist, NOD(f));
+        MISC_META_NODE(f->varlist) = nullptr;
+
+        RELVAL *rootvar = ARR_HEAD(f->varlist);
+        RESET_CELL(rootvar, REB_FRAME, CELL_MASK_CONTEXT);
+        INIT_BINDING(rootvar, UNBOUND);
+        INIT_VAL_CONTEXT_VARLIST(rootvar, f->varlist);  // "canon FRAME!"
+        INIT_VAL_CONTEXT_PHASE(rootvar, NATIVE_ACT(evaluator));
+
+        RELVAL *return_param = ARR_AT(f->varlist, 1);
+        Init_Nulled(return_param);
+
+        f->rootvar = KNOWN(rootvar);
+    }
+    else {
+        // For now we assume the only way other frame types would get a
+        // varlist would be on-demand from this routine.  Hence, managed.
+        //
+        assert(GET_SERIES_FLAG(f->varlist, MANAGED));
+    }
+
     return CTX(f->varlist);
 }
 

@@ -152,7 +152,12 @@ static void Eval_Core_Shared_Checks_Debug(REBFRM *f) {
     assert(IS_POINTER_TRASH_DEBUG(f->opt_label));
 
     if (f->varlist) {
-        assert(NOT_SERIES_FLAG(f->varlist, MANAGED));
+        //
+        // !!! Drop_Action() will leave f->varlist as unmanaged, f->original
+        // will be nullptr.  But calling Context_For_Frame_May_Manage() will
+        // give non-action frames a managed varlist.  Review.
+        //
+        /* assert(NOT_SERIES_FLAG(f->varlist, MANAGED)); */
         assert(NOT_SERIES_INFO(f->varlist, INACCESSIBLE));
     }
 

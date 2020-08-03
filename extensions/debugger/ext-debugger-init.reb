@@ -136,13 +136,13 @@ backtrace*: function [
     ]
 
     max-rows: case [
-        blank? limit [
+        null? limit [
             20  ; Default 20, leaves room to type on 80x25 terminal
         ]
         limit = false [
             99999  ; as many frames as possible
         ]
-        integer? limit [
+        null? limit [
             if limit < 0 [
                 fail ["Invalid limit of frames" frames]
             ]
@@ -157,7 +157,7 @@ backtrace*: function [
 
     f: start
 
-    stack: collect [while [f: parent of f] [
+    stack: collect [cycle [
         a: action of f
 
         if :a = :console [
@@ -252,7 +252,9 @@ backtrace*: function [
             continue
         ]
 
-        keep/only near of f
+        if not keep label of f [
+            keep/only near of f
+        ]
 
         ; If building a backtrace, we just keep accumulating results as long
         ; as there are stack levels left and the limit hasn't been hit.
@@ -282,6 +284,10 @@ backtrace*: function [
         ]
 
         keep/line []
+
+        if not f: parent of f [
+            stop
+        ]
     ]]
 
     ; If we ran out of stack levels before finding the single one requested
