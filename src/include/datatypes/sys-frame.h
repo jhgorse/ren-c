@@ -500,6 +500,10 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
 
 inline static void UPDATE_EXPRESSION_START(REBFRM *f) {
     f->expr_index = f->feed->index; // this is garbage if EVAL_FLAG_VA_LIST
+
+  #ifdef DEBUG_COUNT_TICKS
+    f->tick = TG_Tick;
+  #endif
 }
 
 
@@ -646,7 +650,6 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
     f->feed = feed;
     Prep_Cell(&f->spare);
     Init_Unreadable_Void(&f->spare);
-    f->baseline.dsp = DS_Index;
     TRASH_POINTER_IF_DEBUG(f->out);
 
     f->original = nullptr;  // !!! redundant!
@@ -656,6 +659,18 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
 
     f->took_hold = false;  // !!! Maybe should be an EVAL_FLAG, see notes
     f->alloc_value_list = NOD(f);  // doubly link list, terminates in `f`
+
+    // !!! Previously only the DSP was captured in f->baseline.dsp, but then
+    // redundantly captured via a SNAP_STATE() in Push_Frame().  The
+    // responsibilities of DECLARE_FRAME vs Push_Frame() aren't clearly laid
+    // out, but some clients do depend on the DSP being captured before
+    // Push_Frame() is called, so this snaps the whole baseline here.
+    //
+    SNAP_STATE(&f->baseline);  // see notes on `baseline` in Reb_Frame
+
+  #if defined(DEBUG_COUNT_TICKS)
+    f->tick = TG_Tick;
+  #endif
 }
 
 #define DECLARE_FRAME(name,feed,flags) \
@@ -774,6 +789,7 @@ inline static void Push_Action(
     REBACT *act,
     REBNOD *binding
 ){
+    assert(f == FS_TOP);  // Will this always be true?
     assert(NOT_EVAL_FLAG(f, FULFILL_ONLY));
     assert(NOT_EVAL_FLAG(f, RUNNING_ENFIX));
 

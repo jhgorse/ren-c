@@ -79,13 +79,11 @@
     #define UPDATE_TICK_DEBUG(f,v) \
         do { \
             if (TG_Tick < INTPTR_MAX)  /* avoid rollover (may be 32-bit!) */ \
-                (f)->tick = ++TG_Tick; \
-            else \
-                (f)->tick = INTPTR_MAX;  /* see tick for why signed! */ \
+                ++TG_Tick; \
             if ( \
-                (TG_Break_At_Tick != 0 and f->tick >= TG_Break_At_Tick) \
+                TG_Break_At_Tick != 0 and TG_Tick >= TG_Break_At_Tick \
             ){ \
-                printf("BREAK AT TICK %u\n", cast(unsigned int, (f)->tick)); \
+                printf("BREAK AT TICK %u\n", cast(unsigned int, TG_Tick)); \
                 Dump_Frame_Location((v), (f)); \
                 debug_break();  /* see %debug_break.h */ \
                 TG_Break_At_Tick = 0; \
