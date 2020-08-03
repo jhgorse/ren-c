@@ -64,6 +64,21 @@
 #include "sys-core.h"
 
 
+// In the early development of FRAME!, the REBFRM* for evaluating across a
+// block was reused for each ACTION! call.  Since no more than one action was
+// running at a time, this seemed to work.  However, that didn't allow for
+// a separate "reified" entry for users to point at.  While giving each
+// action its own REBFRM* has performance downsides, it makes the objects
+// correspond to what they are...and may be better for cohering the "executor"
+// pattern by making it possible to use a constant executor per frame.
+//
+#define DECLARE_ACTION_SUBFRAME(f,parent) \
+    DECLARE_FRAME (f, (parent)->feed, \
+        EVAL_MASK_DEFAULT | EVAL_FLAG_KEEP_STALE_BIT | ((parent)->flags.bits \
+            & (EVAL_FLAG_FULFILLING_ARG | EVAL_FLAG_RUNNING_ENFIX \
+                | EVAL_FLAG_DIDNT_LEFT_QUOTE_PATH)))
+
+
 #ifdef DEBUG_EXPIRED_LOOKBACK
     #define CURRENT_CHANGES_IF_FETCH_NEXT \
         (f->feed->stress != nullptr)
@@ -244,6 +259,9 @@ REB_R Brancher_Executor(REBFRM *frame_)
 //
 REB_R New_Expression_Executor(REBFRM *f)
 {
+    if (Is_Throwing(f))
+        return R_THROWN;
+
     assert(DSP >= f->baseline.dsp);  // REDUCE accrues, APPLY adds refinements
     assert(not IS_TRASH_DEBUG(f->out));  // all invisible will preserve output
     assert(f->out != f_spare);  // overwritten by temporary calculations
@@ -337,6 +355,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
     enum {
         ST_EVALUATOR_REEVALUATING = 0,
         ST_EVALUATOR_EXECUTING_GROUP,
+        ST_EVALUATOR_RUNNING_ACTION,
         ST_EVALUATOR_SET_WORD_RIGHT_SIDE,
         ST_EVALUATOR_SET_PATH_RIGHT_SIDE,
         ST_EVALUATOR_SET_GROUP_RIGHT_SIDE
@@ -347,6 +366,27 @@ REB_R Reevaluation_Executor(REBFRM *f)
         break;
       case ST_EVALUATOR_EXECUTING_GROUP:
         STATE_BYTE(f) = 0; goto group_execution_done;
+      case ST_EVALUATOR_RUNNING_ACTION:
+        //
+        // The Action_Executor does not get involved in Lookahead; so you
+        // only get lookahead behavior when an action has been spawned from
+        // a parent frame (such as one evaluating a block, or evaluating an
+        // action's arguments).  Trying to dispatch lookahead from the
+        // Action_Executor causes pain with `null then [x] => [1] else [2]`
+        // cases (for instance).
+        //
+        // However, the evaluation of an invisible can leave a stale value
+        // which indicates a need to invoke another evaluation.  Consider
+        // `do [comment "hi" 10]`.
+        //
+        STATE_BYTE(f) = 0;
+        if (NOT_END(f_next) and GET_CELL_FLAG(f->out, OUT_MARKED_STALE)) {
+            v = Lookback_While_Fetching_Next(f);
+            kind.byte = KIND_BYTE(v);
+            break;
+        }
+        INIT_F_EXECUTOR(f, &Lookahead_Executor);
+        return R_CONTINUATION;
       case ST_EVALUATOR_SET_WORD_RIGHT_SIDE:
         STATE_BYTE(f) = 0; goto set_word_with_out;
       case ST_EVALUATOR_SET_PATH_RIGHT_SIDE:
@@ -459,12 +499,15 @@ REB_R Reevaluation_Executor(REBFRM *f)
     }
 
     // Wasn't the at-end exception, so run normal enfix with right winning.
-
-    Push_Action(f, VAL_ACTION(gotten), VAL_BINDING(gotten));
-    Begin_Enfix_Action(f, VAL_WORD_SPELLING(v));
+  blockscope {
+    DECLARE_ACTION_SUBFRAME (subframe, f);
+    Push_Frame(f->out, subframe);
+    Push_Action(subframe, VAL_ACTION(gotten), VAL_BINDING(gotten));
+    Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(v));
 
     kind.byte = REB_ACTION;  // for consistency in the UNEVALUATED check
     goto process_action;
+  }
 
   give_up_backward_quote_priority:
 
@@ -526,20 +569,22 @@ REB_R Reevaluation_Executor(REBFRM *f)
       case REB_ACTION: {
         REBSTR *opt_label = nullptr;  // not run from WORD!/PATH!, "nameless"
 
-        Push_Action(f, VAL_ACTION(v), VAL_BINDING(v));
-        Begin_Prefix_Action(f, opt_label);
+        DECLARE_ACTION_SUBFRAME (subframe, f);
+        Push_Frame(f->out, subframe);
+        Push_Action(subframe, VAL_ACTION(v), VAL_BINDING(v));
+        Begin_Prefix_Action(subframe, opt_label);
 
         // We'd like `10 -> = 5 + 5` to work, and to do so it reevaluates in
         // a new frame, but has to run the `=` as "getting its next arg from
         // the output slot, but not being run in an enfix mode".
         //
         if (NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT))
-            Expire_Out_Cell_Unless_Invisible(f);
+            Expire_Out_Cell_Unless_Invisible(subframe);
 
         goto process_action; }
 
       process_action:  // Note: Also jumped to by the redo_checked code
-        assert(STATE_BYTE(f) == 0);
+        STATE_BYTE(f) = ST_EVALUATOR_RUNNING_ACTION;
         return R_CONTINUATION;
 
 
@@ -577,13 +622,17 @@ REB_R Reevaluation_Executor(REBFRM *f)
                 }
             }
 
-            Push_Action(f, act, VAL_BINDING(gotten));
+          blockscope {
+            DECLARE_ACTION_SUBFRAME (subframe, f);
+            Push_Frame(f->out, subframe);
+            Push_Action(subframe, act, VAL_BINDING(gotten));
             Begin_Action_Core(
-                f,
+                subframe,
                 VAL_WORD_SPELLING(v),  // use word as label
                 GET_ACTION_FLAG(act, ENFIXED)
             );
             goto process_action;
+          }
         }
 
         if (IS_VOID(gotten))  // need GET/ANY if it's void ("undefined")
@@ -720,12 +769,14 @@ REB_R Reevaluation_Executor(REBFRM *f)
 
       group_execution_done:
 
-        // If group execution left a result, ignore whether it's stale or not.
+        // If group execution left a result, it may be new or it may be stale.
+        // If it's stale and there's infix after it, that infix will catch
+        // the error.
         //
         if (NOT_END(f->out)) {
-            f->out->header.bits &= ~CELL_FLAG_OUT_MARKED_STALE;
-            CLEAR_CELL_FLAG(f->out, UNEVALUATED);  // `(1)` is evaluative
-            INIT_F_EXECUTOR(f, &Lookahead_Executor);  // subsequent enfix ok
+            if (NOT_CELL_FLAG(f->out, OUT_MARKED_STALE))
+                CLEAR_CELL_FLAG(f->out, UNEVALUATED);  // `(1)` is evaluative
+            INIT_F_EXECUTOR(f, &Lookahead_Executor);
             return f->out;
         }
 
@@ -805,11 +856,21 @@ REB_R Reevaluation_Executor(REBFRM *f)
             if (GET_ACTION_FLAG(act, IS_INVISIBLE))
                 fail ("Use `<-` with invisibles fetched from PATH!");
 
-            Push_Action(f, VAL_ACTION(where), VAL_BINDING(where));
-            Begin_Prefix_Action(f, opt_label);
+            DECLARE_ACTION_SUBFRAME (subframe, f);
+            Push_Frame(f->out, subframe);
+            Push_Action(subframe, VAL_ACTION(where), VAL_BINDING(where));
+            Begin_Prefix_Action(subframe, opt_label);
 
-            if (where == f->out)
-                Expire_Out_Cell_Unless_Invisible(f);
+            if (where == subframe->out)
+                Expire_Out_Cell_Unless_Invisible(subframe);
+
+            // !!! The subframe needs to have its baseline DSP match the
+            // baseline before the refinements were pushed from the path.
+            // This wasn't a problem when the invocation used the same REBFRM*
+            // as where the path lived.  Review if there's a better way to
+            // do this, but the issue seems relatively constrained to here.
+            //
+            subframe->baseline.dsp = f->baseline.dsp;
 
             goto process_action;
         }
@@ -1000,8 +1061,10 @@ REB_R Reevaluation_Executor(REBFRM *f)
             // should also be restricted to a single value...though it's
             // being experimented with letting it take more.)
             //
-            Push_Action(f, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
-            Begin_Prefix_Action(f, nullptr);  // no label
+            DECLARE_ACTION_SUBFRAME (subframe, f);
+            Push_Frame(f->out, subframe);
+            Push_Action(subframe, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
+            Begin_Prefix_Action(subframe, nullptr);  // no label
 
             kind.byte = REB_ACTION;
             assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
@@ -1381,8 +1444,19 @@ REB_R Reevaluation_Executor(REBFRM *f)
 //
 REB_R Lookahead_Executor(REBFRM *f)
 {
-    if (GET_EVAL_FLAG(f, ABRUPT_FAILURE))  // this executor itself fail()'ed
+    enum {
+        ST_LOOKAHEAD_INITIAL_ENTRY = 0,
+        ST_LOOKAHEAD_RUNNING_ENFIX
+    };
+
+    if (Is_Throwing(f))  // this executor itself fail()'ed, or action did
         return R_THROWN;  // nothing to clean up
+
+    switch (STATE_BYTE(f)) {
+      case ST_LOOKAHEAD_INITIAL_ENTRY: break;
+      case ST_LOOKAHEAD_RUNNING_ENFIX: break;
+      default: assert(false);
+    }
 
     // If something was run with the expectation it should take the next arg
     // from the output cell, and an evaluation cycle ran that wasn't an
@@ -1587,14 +1661,24 @@ REB_R Lookahead_Executor(REBFRM *f)
     // of parameter fulfillment.  We want to reuse the f->out value and get it
     // into the new function's frame.
 
-    Push_Action(f, VAL_ACTION(f_next_gotten), VAL_BINDING(f_next_gotten));
-    Begin_Enfix_Action(f, VAL_WORD_SPELLING(f_next));
+  blockscope {
+    DECLARE_ACTION_SUBFRAME (subframe, f);
+    Push_Frame(f->out, subframe);
+    Push_Action(
+        subframe,
+        VAL_ACTION(f_next_gotten),
+        VAL_BINDING(f_next_gotten)
+    );
+    Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(f_next));
 
     Fetch_Next_Forget_Lookback(f);  // advances next
+  }
 
+    STATE_BYTE(f) = ST_LOOKAHEAD_RUNNING_ENFIX;
     return R_CONTINUATION;
 
   finished:
+    STATE_BYTE(f) = 0;  // !!! Must be 0 for INIT_F_EXECUTOR
     INIT_F_EXECUTOR(f, &Finished_Executor);
     return f->out;  // not thrown
 }

@@ -72,7 +72,7 @@ REBNATIVE(trap)
   evaluation_finished: {
     if (not Is_Throwing(frame_)) {
         if (REF(result))
-            rebElide(NATIVE_VAL(set), rebQ1(REF(result)), rebQ1(D_OUT), rebEND);
+            rebElide(NATIVE_VAL(set), rebQ(REF(result)), rebQ(D_OUT), rebEND);
         return nullptr;
     }
 

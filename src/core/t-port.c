@@ -332,7 +332,7 @@ REBNATIVE(send_chan)
             "pick", chan, "'closed [0]",
             "(length of pick", chan, "'buffer)",
                     "<= (capacity-of-chan", chan, ") [",
-                "append/only pick", chan, "'buffer", rebQ1(v),
+                "append/only pick", chan, "'buffer", rebQ(v),
                 "1",
             "]",
             "true [2]"

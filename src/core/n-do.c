@@ -110,32 +110,20 @@ REBNATIVE(shove)
 {
     INCLUDE_PARAMS_OF_SHOVE;
 
+    enum {
+        ST_SHOVE_INITIAL_ENTRY = 0,
+        ST_SHOVE_EVALUATING_RIGHT
+    };
+
     REBVAL *left = ARG(left);
 
-    if (NOT_END(D_SPARE)) {  // we've finished the evaluation
-        assert(NOT_CELL_FLAG(D_OUT, OUT_MARKED_STALE));  // !!! possible?
-
-        if (REF(set)) {
-            if (IS_SET_WORD(left)) {
-                assert(IS_BLANK(D_SPARE));
-                Move_Value(Sink_Word_May_Fail(left, SPECIFIED), D_OUT);
-            }
-            else if (IS_SET_PATH(left)) {
-                assert(IS_SET_PATH(D_SPARE));  // the composed set path.
-                frame_->feed->gotten = nullptr;  // arbitrary code, may disrupt
-                rebElideQ(
-                    "set/hard", D_SPARE, NULLIFY_NULLED(D_OUT),
-                rebEND);
-            }
-            else
-                assert(false); // SET-WORD!/SET-PATH! was checked above
-        }
-        else
-            assert(IS_BLANK(D_SPARE));
-
-        return D_OUT;
+    switch (D_STATE_BYTE) {
+      case ST_SHOVE_INITIAL_ENTRY: goto initial_entry;
+      case ST_SHOVE_EVALUATING_RIGHT: goto right_evaluated;
+      default: assert(false);
     }
 
+  initial_entry: {
     REBFRM *f;
     if (not Is_Frame_Style_Varargs_May_Fail(&f, ARG(right)))
         fail ("SHOVE (<-) not implemented for MAKE VARARGS! [...] yet");
@@ -263,11 +251,69 @@ REBNATIVE(shove)
     //
     // !!! It's still not clear if this is a feed flag or a frame flag, as
     // a feed might be used by multiple frames with different out pointers.
-    // Originally it was moved off the frame due to lack of EVAL_FLAGs.
+    // Originally it was moved off the frame due to EVAL_FLAGs running out.
     //
     SET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
 
-    if (REF(enfix)) {  // don't heed enfix state in the action itself
+    if (REF(set)) {
+        //
+        // This case is here to serve:
+        //
+        //     >> some-var: 20
+        //     >> some-var: me + 1 * 10
+        //     == 210
+        //
+        //     >> some-var
+        //     == 210  ; we do NOT want 21
+        //
+        // The issue is that ME is an alias for SHOVE/SET/ENFIX, and it
+        // quotes the SET-WORD! or SET-PATH! on its left and takes on the
+        // responsibility of setting it when it is called back after a
+        // frame executes on the right.  If you try to push the `+` action
+        // and run it enfix with the extracted value of SOME-VAR in f->out
+        // for NEXT_ARG_FROM_OUT, then it will follow the rules for enfix
+        // and add the 1 but not proceed to the `* 10` due to the
+        // NO_LOOKAHEAD option that gets put onto the feed in enfix.
+        // Since you only pushed an action--and that has no lookahead--
+        // the action will complete.
+        //
+        // Instead of pushing an action we thus want to go through a
+        // normal evaluation process, where we advance the feed past the
+        // `+` but still ask for its evaluation.  This normal evaluation
+        // path will get a second chance for the Lookback_Executor once
+        // the `+` ran, before calling this SHOVE back to store the var.
+        //
+        // !!! It is only because we are concerned about assignment that
+        // this is necessary.
+        //
+        if (REF(enfix) and NOT_ACTION_FLAG(VAL_ACTION(shovee), ENFIXED))
+            fail ("SHOVE/SET/ENFIX must not be used with prefix function");
+
+        if (not REF(enfix) and GET_ACTION_FLAG(VAL_ACTION(shovee), ENFIXED))
+            fail ("SHOVE/SET/ENFIX must be used with enfix function");
+
+        DECLARE_FRAME (subframe, f->feed, EVAL_MASK_DEFAULT);
+        subframe->executor = &Reevaluation_Executor;
+
+        // Nuance here is needed for `x: me + 10` vs. `x: my add 10`.  Review.
+        //
+        if (REF(enfix))
+            subframe->u.reval.value = Lookback_While_Fetching_Next(f);
+        else
+            subframe->u.reval.value = shovee;
+
+        Push_Frame(D_OUT, subframe);
+    }
+    else {
+        // This case is here for:
+        //
+        //     >> add 1 2 <- (:multiply) 3
+        //     == 7
+        //
+        // We are trying to override the enfix logic that is in the function
+        // itself.  See above for why this isn't viable to be used with /SET
+        // at this time.
+        //
         DECLARE_FRAME (subframe, f->feed, EVAL_MASK_DEFAULT);
         Push_Frame(D_OUT, subframe);
 
@@ -277,20 +323,43 @@ REBNATIVE(shove)
             VAL_ACTION(shovee),
             VAL_BINDING(shovee)
         );
-        Begin_Enfix_Action(subframe, nullptr);  // invisible cache NO_LOOKAHEAD
 
-        Fetch_Next_Forget_Lookback(f);
+        if (REF(enfix)) {
+            Begin_Enfix_Action(subframe, opt_label);
+                // ^--invisibles cache NO_LOOKAHEAD
+            Fetch_Next_Forget_Lookback(f);
+        }
+        else
+            Begin_Prefix_Action(subframe, opt_label);
     }
-    else {
-        DECLARE_FRAME (subframe, f->feed, EVAL_MASK_DEFAULT);
-        subframe->executor = &Reevaluation_Executor;
-        subframe->u.reval.value = shovee;
-
-        Push_Frame(D_OUT, subframe);
-    }
-
-    STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 reserved for initial_entry
+ 
+    STATE_BYTE(frame_) = ST_SHOVE_EVALUATING_RIGHT;
     return R_CONTINUATION;
+  }
+
+  right_evaluated: {
+    assert(NOT_CELL_FLAG(D_OUT, OUT_MARKED_STALE));  // !!! possible?
+
+    if (REF(set)) {
+        if (IS_SET_WORD(left)) {
+            assert(IS_BLANK(D_SPARE));
+            Move_Value(Sink_Word_May_Fail(left, SPECIFIED), D_OUT);
+        }
+        else if (IS_SET_PATH(left)) {
+            assert(IS_SET_PATH(D_SPARE));  // the composed set path.
+            frame_->feed->gotten = nullptr;  // arbitrary code, may disrupt
+            rebElideQ(
+                "set/hard", D_SPARE, NULLIFY_NULLED(D_OUT),
+            rebEND);
+        }
+        else
+            assert(false); // SET-WORD!/SET-PATH! was checked above
+    }
+    else
+        assert(IS_BLANK(D_SPARE));
+
+    return D_OUT;
+  }
 }
 
 

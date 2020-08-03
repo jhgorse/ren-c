@@ -1341,8 +1341,7 @@ REB_R Action_Executor(REBFRM *f)
         //
         assert(NOT_EVAL_FLAG(f, FULFILL_ONLY));
         Drop_Action(f);
-        INIT_F_EXECUTOR(f, &Reevaluation_Executor);
-        f->u.reval.value = Lookback_While_Fetching_Next(f);
+        INIT_F_EXECUTOR(f, &Finished_Executor);
         return R_CONTINUATION; }
 
       default:
@@ -1461,8 +1460,8 @@ REB_R Action_Executor(REBFRM *f)
     // Note: Be careful that the lookahead executor runs only once when an
     // action gets dispatched; so if the action dispatch took over a frame
     // that was doing argument fulfillment, it should do that fulfillment's
-    // lookahead.  However, if the action had its own frame separate from
-    // the reevaluation executor, you wouldn't run twice, because:
+    // lookahead.  When the action has its own frame separate from the
+    // reevaluation executor, you wouldn't run twice, because:
     //
     //     null then x => [1] else [2]
     //
@@ -1470,7 +1469,15 @@ REB_R Action_Executor(REBFRM *f)
     // ACTION!, and then after the fulfillment of the argument; so ELSE thinks
     // it has already had two chances, so it runs deferred enfix too soon.
     //
-    INIT_F_EXECUTOR(f, &Lookahead_Executor);
+    // Currently the model is that the action gets its own frame, but the
+    // lookahead is executed by the evaluator.  Another case to test when
+    // tinkering with this mechanic is:
+    //
+    //     1 + comment "hi" 2 * 3     ; make sure 9 not 7
+    //     1 + (comment "hi") 2 * 3   ; check this is 9 while you're at it
+    //     1 (comment "hi") + 2       ; ...and make sure this one fails!
+    //
+    INIT_F_EXECUTOR(f, &Finished_Executor);
     return f->out;
   }
 

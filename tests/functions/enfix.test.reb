@@ -77,7 +77,7 @@
 ]
 
 
-; <- is the "STEAL" operation.  It lets any ACTION!...including one dispatched
+; <- is the "SHOVE" operation.  It lets any ACTION!...including one dispatched
 ; from PATH!, receive its first argument from the left.  It uses the parameter
 ; conventions of that argument.
 

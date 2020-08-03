@@ -491,7 +491,7 @@ REBNATIVE(go)
         Drop_Frame(f);
         fail ("Not enough memory for GO to allocate a new task");
     }
-    Prep_Non_Stack_Cell(&task->plug);
+    Prep_Cell(&task->plug);
 
     // !!! For the moment, you can't Unplug a root frame, and you can't
     // stackfully evaluate unless something is a root frame.  Take the flag
@@ -500,7 +500,7 @@ REBNATIVE(go)
     task->go_frame = f;
     CLEAR_EVAL_FLAG(f, ROOT_FRAME);
 
-    Prep_Non_Stack_Cell(&task->channel);
+    Prep_Cell(&task->channel);
     if (REF(channel)) {
         REBVAL *chan = rebValue("make-chan", rebEND);
         Move_Value(D_OUT, chan);

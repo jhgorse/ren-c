@@ -750,8 +750,7 @@ static void Init_Root_Vars(void)
 
     RESET_CELL(Prep_Cell(&PG_R_Dewind), REB_R_DEWIND, CELL_MASK_NONE);
 
-    Prep_Non_Stack_Cell(&PG_R_Blocking);
-    RESET_CELL(&PG_R_Blocking, REB_R_BLOCKING, CELL_MASK_NONE);
+    RESET_CELL(Prep_Cell(&PG_R_Blocking), REB_R_BLOCKING, CELL_MASK_NONE);
 
     REBSER *locker = nullptr;
 
