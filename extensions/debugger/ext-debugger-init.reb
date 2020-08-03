@@ -365,14 +365,17 @@ locals: function [return: <void>] [
 ]
 
 
-debug-console: adapt 'console [
-    resumable: true
-
-    ; The debug skin is made as a global object, so changes to the skin will
-    ; persist between invocations for BREAKPOINTs or STEPs.
-    ;
-    skin: debug-console-skin
-]
+; !!! The `requires` for CONSOLE in the %make-spec.r doesn't seem to be making
+; CONSOLE get registered for this to see it.  Review why not.
+;
+;debug-console: adapt 'console [
+;    resumable: true
+;
+;    ; The debug skin is made as a global object, so changes to the skin will
+;    ; persist between invocations for BREAKPOINTs or STEPs.
+;    ;
+;    skin: debug-console-skin
+;]
 
 
 ; !!! INTERRUPT shouldn't actually be exported; but the way it's run currently

@@ -333,20 +333,38 @@ start-console: function [
 ]
 
 
-console-impl: func [
-    {Revolt ACTION! that is called from C in a loop to implement the console}
+console: func [
+    {Runs customizable Read-Eval-Print Loop}
 
-    return: "Console is run as a GO routine, so return result does not matter"
-        <void>
-    requests "Channel to make sandboxed evaluation requests on"
-        [object!]
-    responses "Channel of (quoted) responses from evaluator (else ERROR!s)"
-        [object!]
-    resumable "Is the RESUME function allowed to exit this console"
-        [logic!]
-    skin "Console skin to use if the console has to be launched"
-        [<opt> object! file!]
+    return: "Exit code, RESUME instruction, or handle to evaluator hook"
+        [integer! sym-group! handle!]
+    /resumable "Allow RESUME instruction (will return a SYM-GROUP!)"
+    /skin "File containing console skin, or MAKE CONSOLE! derived object"
+        [file! object!]
 ][
+;
+; !!! The idea behind the console is that it can be called with skinning;
+; so that if BREAKPOINT wants to spin up a console, it can...but with a
+; little bit of injected information like telling you the current stack
+; level it's focused on.  How that's going to work is still pretty up
+; in the air.
+;
+; !!! The initial usermode console implementation was geared toward a
+; single `system/console` object.  But the debugger raised the issue of
+; nested sessions which might have a different skin.  So save whatever
+; the console object was if it is being overridden.
+
+    let old-console: :system/console
+    if skin [
+        system/console: _  ; !!! needed for now
+    ]
+
+    ; When we return from this CONSOLE, adapt it to put the old console back.
+    ;
+    let console-return: adapt 'return [
+        system/console: old-console
+    ]
+
     let execute: func [
         {Ask the C engine to run code with Ctrl-C enabled}
 
@@ -357,20 +375,17 @@ console-impl: func [
             [<output>]
         /debuggable "Should the execution be able to be debugged"
     ][
-        all [
-            not debuggable
-            block? instruction
-        ] then [
-            instruction: as group! instruction  ; signal debugger invisibility
-        ]
+        let r: void
 
-        send-chan requests instruction
-
-        ; The initial protocol for the `result` is that it is quoted if it
+        ; The initial protocol for GO/CHANNEL is that it is quoted if it
         ; is valid, or an ERROR! if an error occurred.  Hence a QUOTED! error
         ; means that the code actually evaluated to an ERROR! value.
         ;
-        let r: receive-chan responses
+        if debuggable [
+            r: receive-chan go/channel instruction
+        ] else [
+            r: receive-chan go/channel/kernel instruction
+        ]
 
         === {QUIT HANDLING} ===
 
@@ -384,7 +399,7 @@ console-impl: func [
             r/id = 'no-catch
             :r/arg2 = :QUIT  ; throw's /NAME
         ] then [
-            execute switch type of get* 'r/arg1 [
+            console-return switch type of get* 'r/arg1 [
                 void! [0]  ; plain QUIT, no /WITH, call that success
 
                 logic! [either :r/arg1 [0] [1]]  ; logic true is success
@@ -395,8 +410,8 @@ console-impl: func [
 
                 default [1]  ; generic error code
             ]
-            assert ["Unreachable (should we overload RETURN or EXIT?)"]
-            return
+
+            panic "Unreachable (should we overload RETURN or EXIT?)"
         ]
 
         === {OTHER ERROR HANDLING} ===
@@ -649,7 +664,7 @@ upgrade: function [
 ;
 append lib compose [
     console!: (ensure object! console!)
-    console-impl: (:console-impl)
+    console: (:console)
 ]
 
 ; !!! The whole host startup/console is currently very manually loaded
