@@ -1372,6 +1372,28 @@ void Push_Guard_Node(const REBNOD *node)
 //
 void Startup_GC(void)
 {
+    TG_Ballast = MEM_BALLAST; // or overwritten by debug build below...
+    TG_Max_Ballast = MEM_BALLAST;
+
+  #ifndef NDEBUG
+    const char *env_recycle_torture = getenv("R3_RECYCLE_TORTURE");
+    if (env_recycle_torture and atoi(env_recycle_torture) != 0)
+        TG_Ballast = 0;
+
+    if (TG_Ballast == 0) {
+        printf(
+            "**\n" \
+            "** R3_RECYCLE_TORTURE is nonzero in environment variable!\n" \
+            "** (or TG_Ballast is set to 0 manually in the init code)\n" \
+            "** Recycling on EVERY evaluator step, *EXTREMELY* SLOW!...\n" \
+            "** Useful in finding bugs before you can run RECYCLE/TORTURE\n" \
+            "** But you might only want to do this with -O2 debug builds.\n"
+            "**\n"
+        );
+        fflush(stdout);
+     }
+  #endif
+
     assert(not GC_Disabled);
     assert(not GC_Recycling);
 

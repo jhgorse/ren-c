@@ -967,28 +967,6 @@ void Startup_Tasks(void)
     Eval_Sigmask = ALL_BITS;
     Eval_Limit = 0;
 
-    TG_Ballast = MEM_BALLAST; // or overwritten by debug build below...
-    TG_Max_Ballast = MEM_BALLAST;
-
-  #ifndef NDEBUG
-    const char *env_recycle_torture = getenv("R3_RECYCLE_TORTURE");
-    if (env_recycle_torture and atoi(env_recycle_torture) != 0)
-        TG_Ballast = 0;
-
-    if (TG_Ballast == 0) {
-        printf(
-            "**\n" \
-            "** R3_RECYCLE_TORTURE is nonzero in environment variable!\n" \
-            "** (or TG_Ballast is set to 0 manually in the init code)\n" \
-            "** Recycling on EVERY evaluator step, *EXTREMELY* SLOW!...\n" \
-            "** Useful in finding bugs before you can run RECYCLE/TORTURE\n" \
-            "** But you might only want to do this with -O2 debug builds.\n"
-            "**\n"
-        );
-        fflush(stdout);
-     }
-  #endif
-
     // The thrown arg is not intended to ever be around long enough to be
     // seen by the GC.
     //
@@ -1532,52 +1510,6 @@ void Shutdown_Core(void)
 
     const bool shutdown = true; // go ahead and free all managed series
     Recycle_Core(shutdown, NULL);
-
-  #if !defined(NDEBUG)
-  blockscope {
-    REBSEG *seg = Mem_Pools[FED_POOL].segs;
-    for (; seg != nullptr; seg = seg->next) {
-        REBLEN n = Mem_Pools[FED_POOL].units;
-        REBYTE *bp = cast(REBYTE*, seg + 1);
-        for (; n > 0; --n, bp += sizeof(REBFED)) {
-            REBFED *feed = cast(REBFED*, bp);
-            if (IS_FREE_NODE(feed))
-                continue;
-          #ifdef DEBUG_COUNT_TICKS
-            printf(
-                "** FEED LEAKED at tick %lu\n",
-                cast(unsigned long, feed->tick)
-            );
-          #else
-            assert(!"** FEED LEAKED but no DEBUG_COUNT_TICKS enabled\n");
-          #endif
-        }
-    }
-  }
-  #endif
-
-  #if !defined(NDEBUG)
-  blockscope {
-    REBSEG *seg = Mem_Pools[FRM_POOL].segs;
-    for (; seg != nullptr; seg = seg->next) {
-        REBLEN n = Mem_Pools[FRM_POOL].units;
-        REBYTE *bp = cast(REBYTE*, seg + 1);
-        for (; n > 0; --n, bp += sizeof(REBFRM)) {
-            REBFRM *f = cast(REBFRM*, bp);
-            if (IS_FREE_NODE(f))
-                continue;
-          #ifdef DEBUG_COUNT_TICKS
-            printf(
-                "** FRAME LEAKED at tick %lu\n",
-                cast(unsigned long, f->tick)
-            );
-          #else
-            assert(!"** FRAME LEAKED but DEBUG_COUNT_TICKS not enabled");
-          #endif
-        }
-    }
-  }
-  #endif
 
     Shutdown_Mold();
     Shutdown_Collector();
