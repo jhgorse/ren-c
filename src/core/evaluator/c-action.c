@@ -311,12 +311,6 @@ REB_R Action_Executor(REBFRM *f)
     if (NOT_END(f->param)) {
         switch (STATE_BYTE(f)) {
           case ST_ACTION_INITIAL_ENTRY:
-            //
-            // It's important to make sure this transition happens before a
-            // recycle can happen, because the GC needs to know that the
-            // args are being fulfilled so it protects up through f->arg.
-            //
-            STATE_BYTE(f) = ST_ACTION_FULFILLING_ARGS;
             goto process_action;
           case ST_ACTION_FULFILLING_ARGS: goto finalize_arg;
           default: assert(false);
@@ -331,6 +325,12 @@ REB_R Action_Executor(REBFRM *f)
     goto dispatch_phase;  // Assume a followup was desired otherwise
 
   process_action:
+    //
+    // It's important to make sure this transition happens before a
+    // recycle can happen, because the GC needs to know that the
+    // args are being fulfilled so it protects up through f->arg.
+    //
+    STATE_BYTE(f) = ST_ACTION_FULFILLING_ARGS;
 
     assert(f->original);  // set by Begin_Action()
     assert(IS_FRAME(f->rootvar));

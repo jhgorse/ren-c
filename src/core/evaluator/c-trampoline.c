@@ -164,7 +164,15 @@ bool Trampoline_Throws(REBFRM *f)
         // say that all continuations have nonzero state bytes.  Then things
         // like YIELD will be at state byte zero: the root of an unwind.
         //
-        assert(f == FS_TOP or STATE_BYTE(f) != 0);
+        // !!! This test being specific about YIELD is really something that
+        // needs to account for usages of R_DEWIND, or something abstract, but
+        // it works for the moment.
+        //
+        assert(
+            f == FS_TOP
+            or STATE_BYTE(f) != 0
+            or (Is_Action_Frame(f) and FRM_PHASE(f) == NATIVE_ACT(yield))
+        );
     }
 
     if (r == R_BLOCKING) {

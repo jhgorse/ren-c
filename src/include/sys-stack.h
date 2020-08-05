@@ -153,6 +153,12 @@ inline static REBVAL *DS_AT(REBDSP d) {
 #define Pop_Stack_Values(dsp) \
     Pop_Stack_Values_Core((dsp), ARRAY_MASK_HAS_FILE_LINE)
 
+inline static void Push_Stack_Values(REBARR *a) {
+    RELVAL *item = ARR_HEAD(a);
+    for (; NOT_END(item); ++item)
+        Move_Value(DS_PUSH(), KNOWN(item));    
+}
+
 
 //=////////////////////////////////////////////////////////////////////////=//
 //

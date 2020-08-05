@@ -187,10 +187,22 @@
     ]
 )
 
-; !!! This way of writing n-generator does not work.
-; The reasoning seems tied up in how CHAIN is.  Research.
-;
-( comment [
+
+; Simple CHAIN test
+(
+    g: generator [yield 1 yield 2 yield 3]
+    c: chain [:g | func [x [<opt> any-value!]] [if x [x + 10]]]
+    did all [
+        c = 11
+        c = 12
+        c = 13
+        c = null
+        c = null
+    ]
+)
+
+; CHAIN variant of N-GENERATOR
+(
     n-generator: func [body [block!]] [
         let g: generator compose [
             yield: enclose 'yield func [f] [
@@ -199,7 +211,7 @@
             ]
             (as group! body)
         ]
-        return chain [:g | :unquote]
+        return chain [:g | :unquote]  ; Note: UNQUOTE of NULL is NULL
     ]
 
     a: b: c: void
@@ -221,7 +233,7 @@
         b = null
         c = 2
     ]
-] true)  ; Skip this test for now
+)
 
 
 ; COMPOSE test

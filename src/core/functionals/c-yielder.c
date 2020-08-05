@@ -31,6 +31,7 @@ enum {
     IDX_YIELDER_LAST_YIELD_RESULT = 3,  // so that `z: yield 1 + 2` is useful
     IDX_YIELDER_PLUG = 4,  // saved if you YIELD, captures data stack etc.
     IDX_YIELDER_OUT = 5,  // whatever f->out in-progress was when interrupted
+    IDX_YIELDER_CHAINS = 6,  // could share space with IDX_YIELDER_OUT
     IDX_YIELDER_MAX
 };
 
@@ -62,7 +63,7 @@ REB_R Yielder_Dispatcher(REBFRM *f)
 
   invoked: {
     //
-    // Because yielders accrue state as they run, more than on can't be in
+    // Because yielders accrue state as they run, more than one can't be in
     // flight at a time.  Hence what would usually be an "initial entry" of
     // a new call for other dispatchers, each call is effectively to the same
     // "instance" of this yielder.  So the ACT_DETAILS() is modified while
@@ -70,11 +71,8 @@ REB_R Yielder_Dispatcher(REBFRM *f)
     //
     // (Note the frame state is in an array, and thus can't be NULL.)
 
-    if (IS_FRAME(state))  // we were suspended by YIELD, and want to resume
-        goto resume_body;
-
-    if (IS_BLANK(state))  // set by the YIELDER creation routine
-        goto first_run;
+    if (IS_VOID(state))  // currently on the stack and running
+        return Init_Thrown_Failure(f->out, Error_Yielder_Reentered_Raw());
 
     if (IS_LOGIC(state)) {  // terminated due to finishing the body or error
         if (VAL_LOGIC(state))
@@ -83,8 +81,37 @@ REB_R Yielder_Dispatcher(REBFRM *f)
         return Init_Thrown_Failure(f->out, Error_Yielder_Errored_Raw());
     }
 
-    assert(IS_VOID(state));  // currently on the stack and running
-    return Init_Thrown_Failure(f->out, Error_Yielder_Reentered_Raw());
+    // If there's any accrued state in the yielder (e.g. CHAINs to run) then
+    // we want that state to apply on the YIELD.  Consider:
+    //
+    //    g: generator [yield 1]
+    //    c: chain [:g | func [x] [if x [x + 1]]
+    //
+    // You would like a call to `c` to generate 2 on the first call.  This
+    // means that since the YIELD is actually what produces the result of `g`,
+    // the chain stack has to be in effect when the YIELD returns.  So we
+    // take the extra stack and store it to be reused on the YIELD (as well as
+    // when the generator finishes).
+    //
+    // Note: This might be doable if the Unplug/Replug stack mechanics were
+    // changed to plug in to a baseline of the stack level above the yielder.
+    // Then any state the yielder had in effect initially would be kept (e.g.
+    // mold buffers and other things too).  But that might break tasks; so
+    // review the Plug/Unplug API as tasks mature to see if that's viable.
+    //
+    assert(f == FS_TOP);
+    RELVAL* chains = ARR_AT(details, IDX_YIELDER_CHAINS);
+    assert(IS_UNREADABLE_DEBUG(chains));
+    if (DSP == f->baseline.dsp)
+        Init_Blank(chains);
+    else
+        Init_Block(chains, Pop_Stack_Values(f->baseline.dsp));
+
+    if (IS_FRAME(state))  // we were suspended by YIELD, and want to resume
+        goto resume_body;
+
+    assert(IS_BLANK(state));  // set by the YIELDER creation routine
+    goto first_run;
   }
 
   first_run: {
@@ -254,12 +281,22 @@ REB_R Yielder_Dispatcher(REBFRM *f)
 
   body_finished_or_threw: {
     //
+    // Apply pending CHAINs to this completion (see notes above).
+    //
+    assert(f == FS_TOP);
+    RELVAL *chains = ARR_AT(details, IDX_YIELDER_CHAINS);
+    if (IS_BLOCK(chains))
+        Push_Stack_Values(VAL_ARRAY(chains));
+    else
+        assert(IS_BLANK(chains));
+
     // Clean up all the details fields so the GC can reclaim the memory
     //
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_LAST_YIELDER_CONTEXT));
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT));
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_PLUG));
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_OUT));
+    Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_CHAINS));
 
     if (Is_Throwing(f)) {
         if (IS_ERROR(VAL_THROWN_LABEL(f->out))) {
@@ -330,6 +367,7 @@ REBNATIVE(yielder)
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT));
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_PLUG));
     Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_OUT));
+    Init_Unreadable_Void(ARR_AT(details, IDX_YIELDER_CHAINS));
 
     return Init_Action_Unbound(D_OUT, yielder);
 }
@@ -366,19 +404,9 @@ REBNATIVE(generator)
 REBNATIVE(yield)
 //
 // The benefits of distinguishing NULL as a generator result meaning the body
-// has completed are considered to outweigh the ability to yield NULL.  While
-// this is believed to be good, it can be overridden, for instance:
-//
-//     n-generator: func [body [block!]] [
-//         let g: generator compose [
-//             yield: enclose 'yield func [f] [
-//                 f/value: quote :f/value  ; chained generator will dequote
-//                 return dequote do f  ; also dequote YIELD's return
-//             ]
-//             (as group! body)
-//         ]
-//         return chain [:g | :dequote]
-//     ]
+// has completed are considered to outweigh the ability to yield NULL.  A
+// modified generator that yields quoted values and unquotes on exit points
+// can be used to work around this.
 {
     INCLUDE_PARAMS_OF_YIELD;
 
@@ -465,6 +493,15 @@ REBNATIVE(yield)
         ARR_AT(yielder_details, IDX_YIELDER_LAST_YIELD_RESULT),
         ARG(value)
     );
+
+    // Apply pending chains to this YIELD (see notes in YIELDER).
+    //
+    RELVAL* chains = ARR_AT(yielder_details, IDX_YIELDER_CHAINS);
+    if (IS_BLOCK(chains))
+        Push_Stack_Values(VAL_ARRAY(chains));
+    else 
+        assert(IS_BLANK(chains));
+    Init_Unreadable_Void(chains);
 
     /* REBACT *target_fun = FRM_UNDERLYING(target_frame); */
 
