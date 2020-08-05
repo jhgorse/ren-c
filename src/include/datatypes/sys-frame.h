@@ -267,6 +267,21 @@ inline static bool Is_Action_Frame_Fulfilling(REBFRM *f) {
 }
 
 
+inline static bool Is_Task_Root_Frame(REBFRM *f) {
+    if (NOT_EVAL_FLAG(f, ROOT_FRAME))
+        return false;  // can't be a task root if not a root
+    if (f->prior == FS_BOTTOM)
+        return true;  // root of "main task"
+    if (PG_Tasks == nullptr)
+        return false;  // no tasks
+    REBTSK *task = PG_Tasks;
+    do {
+        if (task->go_frame == f)
+            return true;
+    } while (task->next != PG_Tasks);
+    return false;
+}
+
 inline static REBCTX *Context_For_Frame_May_Manage(REBFRM *f) {
     //
     // !!! Traditionally, FRAME! could only exist for ACTION!s.  A non-action

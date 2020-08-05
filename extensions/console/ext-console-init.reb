@@ -486,7 +486,10 @@ console: func [
                     break  ; end multi-line input, causes CONTINUE below
                 ]
 
-                fail error  ; have other INPUT-HOOK fails cause internal error
+                ; Have other INPUT-HOOK fails cause internal error (use DO
+                ; instead of FAIL to preserve error's location info.)
+                ;
+                do error
             ]
 
             if null? line [

@@ -307,7 +307,7 @@ void Set_Location_Of_Error(
     // from the top of stack and go downward.
     //
     REBFRM *f = where;
-    for (; f != FS_BOTTOM; f = f->prior) {
+    for (; not Is_Task_Root_Frame(f); f = f->prior) {
         //
         // Only invoked functions (not pending functions, groups, etc.)
         //
