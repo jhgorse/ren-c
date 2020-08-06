@@ -77,25 +77,14 @@ do*: func [
     let original-path: try what-dir
     let original-script: _
 
-    let finalizer: func [
-        value [<opt> any-value!]
-        /quit
-        <with> return
-    ][
-        let quit_FINALIZER: quit
-        quit: :lib/quit
-
-        ; Restore system/script and the dir if they were changed
+    defer [
+        ; DEFER runs code at end of frame regardless of success/failure
+        ; Restores system/script and the dir if they were changed
 
         if original-script [system/script: original-script]
         if original-path [change-dir original-path]
 
-        if quit_FINALIZER and [only] [
-            quit get/any 'value  ; "rethrow" the QUIT if DO/ONLY
-        ]
-
         set 'force-remote-import old-force-remote-import
-        return get/any 'value  ; returns from DO*, because of <with> return
     ]
 
     ; If a file is being mentioned as a DO location and the "current path"
@@ -123,6 +112,17 @@ do*: func [
     ensure [object! blank!] hdr: default [_]
     let is-module: 'module = select hdr 'type
 
+    let do-helper: func [
+        {If /ONLY, then let QUIT propagate, else trap QUIT args as the result}
+        code [block!]
+    ][
+        either only [
+            return do code  ; Oridinary DO, no QUIT intercepted
+        ][
+            return catch/quit [return do code]  ; Caught QUITs give their arg
+        ]
+    ]
+
     let result
     if (text? source) and [not is-module] [
         ;
@@ -131,16 +131,9 @@ do*: func [
         ;
         do-needs hdr  ; Load the script requirements
         intern code   ; Bind the user script
-        catch/quit [
-            ;
-            ; The source string may have been mutable or immutable, but the
-            ; loaded code is not locked for this case.  So this works:
-            ;
-            ;     do "append {abc} {de}"
-            ;
-            result: do code  ; !!! pass args implicitly?
-        ] then :finalizer/quit
-    ] else [
+        result: do-helper code
+    ]
+    else [
         ; Otherwise we are in script mode.  When we run a script, the
         ; "current" directory is changed to the directory of that script.
         ; This way, relative path lookups to find dependent files will look
@@ -174,7 +167,7 @@ do*: func [
 
         ; Eval the block or make the module, returned
         either is-module [ ; Import the module and set the var
-            catch/quit [
+            result: do-helper [
                 import module/mixin hdr code (opt do-needs/no-user hdr)
 
                 ; !!! It would be nice if you could modularize a script and
@@ -185,18 +178,16 @@ do*: func [
                 ;
                 ; https://github.com/rebol/rebol-issues/issues/2373
                 ;
-                result: void
-            ] then :finalizer/quit
+                void
+            ]
         ][
             do-needs hdr  ; Load the script requirements
             intern code   ; Bind the user script
-            catch/quit [
-                result: do code
-            ] then :finalizer/quit
+            result: do-helper code
         ]
     ]
 
-    return finalizer get/any 'result
+    return get/any 'result
 ]
 
 export: func [
