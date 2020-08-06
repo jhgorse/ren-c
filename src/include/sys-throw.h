@@ -95,11 +95,13 @@ inline static REB_R Init_Thrown_With_Label(
     const REBVAL *arg,
     const REBVAL *label // Note: is allowed to be same as `out`
 ){
+    assert(IS_END(&TG_Thrown_Arg));
+    Move_Value(&TG_Thrown_Arg, arg);
+
   #if defined(NDEBUG)
     if (out != label)
         Move_Value(out, label);
   #else
-    assert(IS_END(&TG_Thrown_Arg));
     assert(IS_END(&TG_Thrown_Label_Debug));
 
     // Help avoid accidental uses of thrown output as misunderstood plain
@@ -117,7 +119,6 @@ inline static REB_R Init_Thrown_With_Label(
     }
   #endif
 
-    Move_Value(&TG_Thrown_Arg, arg);
     return R_THROWN; // for chaining to dispatcher output
 }
 
