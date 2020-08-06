@@ -107,8 +107,8 @@ REBNATIVE(as_pair)
 //      return: [<requote> action! any-array! any-path! any-word!]
 //      value "Value whose binding is to be set (modified) (returned)"
 //          [<dequote> action! any-array! any-path! any-word!]
-//      target "Target context or a word whose binding should be the target"
-//          [any-word! any-context!]
+//      target "Target context or item whose binding should be the target"
+//          [any-word! any-context! action!]
 //      /copy "Bind and return a deep copy of a block, don't modify original"
 //      /only "Bind only first block (not deep)"
 //      /new "Add to context any new words found"
@@ -151,6 +151,12 @@ REBNATIVE(bind)
         // Get target from an OBJECT!, ERROR!, PORT!, MODULE!, FRAME!
         //
         context = VAL_CONTEXT(target);
+    }
+    else if (IS_ACTION(target)) {
+        REBNOD *n = VAL_BINDING(target);
+        if (n == UNBOUND)
+            fail ("ACTION! has no binding");  // fix errors to accept ACTION!
+        context = CTX(n);
     }
     else {
         assert(ANY_WORD(target));
@@ -364,7 +370,8 @@ bool Did_Get_Binding_Of(REBVAL *out, const REBVAL *v)
         if (not n)
             return false;
 
-        Init_Frame(out, CTX(n));
+        REBCTX *c = CTX(n);
+        Init_Any_Context(out, CTX_TYPE(c), c);
         break; }
 
     case REB_WORD:

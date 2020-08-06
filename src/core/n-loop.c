@@ -550,6 +550,203 @@ static REB_R Loop_Each(REBFRM *frame_, LOOP_MODE mode)
 }
 
 
+
+
+
+enum {
+    IDX_ITERATES_DATA,
+    IDX_ITERATES_MAX
+};
+
+
+//
+//  Iterator_Dispatcher: C
+//
+REB_R Iterator_Dispatcher(REBFRM *f) {
+    REBACT *phase = FRM_PHASE(f);
+    REBARR *details = ACT_DETAILS(phase);
+    assert(ARR_LEN(details) >= IDX_ITERATES_MAX);
+
+    if (not IS_NULLED(FRM_ARG(f, 1))) {
+        RELVAL *param = ACT_PARAM(phase, 1);
+        assert(VAL_PARAM_SYM(param) == SYM_DONE);
+        UNUSED(param);
+        Init_Blank(ARR_AT(details, IDX_ITERATES_DATA));
+        return nullptr;
+    }
+
+    REBVAL *data = KNOWN(ARR_AT(details, 0));
+
+    REBNOD *binding = FRM_BINDING(f);
+    if (not binding) {
+        REBVAL *item = rebValue("first", data, rebEND);
+        Move_Value(f->out, REIFY_NULL(item));
+        rebRelease(item);
+
+        REBVAL *next = rebValue("try next", data, rebEND);
+        Move_Value(data, next);
+        rebRelease(next);
+
+        return f->out;
+    }
+
+    bool first_key = true;
+
+    REBCTX *ctx = CTX(binding);
+    REBVAL *key = CTX_KEYS_HEAD(ctx);
+    REBVAL *var = CTX_VARS_HEAD(ctx);
+    for (; NOT_END(key); ++key, ++var) {
+        if (Is_Param_Hidden(key))
+            continue;
+
+        REBVAL *item = rebValue("first", data, rebEND);
+        if (item == nullptr and first_key)
+            return nullptr;
+        first_key = false;
+        Move_Value(var, REIFY_NULL(item));  // only non-first keys can be null
+        rebRelease(item);
+
+        REBVAL *next = rebValue("try next", data, rebEND);
+        Move_Value(data, next);
+        rebRelease(next);
+    }
+
+    return Init_Object(f->out, ctx);
+}
+
+
+//
+//  iterates: native [
+//
+//  {Does an iteration.}
+//
+//      return: "OBJECT! if /VARS, else individual values; NULL when done"
+//          [<opt> any-value!]
+//      data [any-series!]
+//      /vars [word! block! object!]
+// ]
+//
+REBNATIVE(iterates) {
+    INCLUDE_PARAMS_OF_ITERATES;
+
+    REBARR *paramlist = Make_Array_Core(
+        2,
+        SERIES_MASK_PARAMLIST | NODE_FLAG_MANAGED
+    );
+
+    REBVAL *archetype = RESET_CELL(
+        Alloc_Tail_Array(paramlist),
+        REB_ACTION,
+        CELL_MASK_ACTION
+    );
+    VAL_ACT_PARAMLIST_NODE(archetype) = NOD(paramlist);
+    INIT_BINDING(archetype, UNBOUND);
+
+    Init_Param(
+        Alloc_Tail_Array(paramlist),
+        REB_P_NORMAL,
+        Canon(SYM_DONE),
+        FLAGIT_KIND(REB_TS_REFINEMENT)
+    );
+
+    MISC_META_NODE(paramlist) = nullptr;  // !!! auto-generate info for HELP?
+
+    REBACT *iterator = Make_Action(
+        paramlist,
+        &Iterator_Dispatcher,
+        nullptr,  // no underlying action (use paramlist)
+        nullptr,  // no specialization exemplar (or inherited exemplar)
+        1  // details array capacity
+    );
+
+    REBARR *details = ACT_DETAILS(iterator);
+    Move_Value(ARR_AT(details, IDX_ITERATES_DATA), ARG(data));
+
+    Move_Value(D_OUT, ACT_ARCHETYPE(iterator));
+
+    const REBVAL *vars = REF(vars);
+
+    // If no variables are specified, the binding of the iterator ACTION! is
+    // left as unbound (the archetype is unbound).
+    //
+    if (not vars)
+        return D_OUT;
+
+    REBCTX *ctx;
+    if (IS_OBJECT(vars)) {
+        ctx = VAL_CONTEXT(vars);
+    }
+    else if (IS_WORD(vars)) {
+        ctx = Alloc_Context_Core(REB_OBJECT, 1, NODE_FLAG_MANAGED);
+        Append_Context(ctx, nullptr, VAL_WORD_SPELLING(vars));
+    }
+    else {
+        assert(IS_BLOCK(vars));
+        ctx = Alloc_Context_Core(
+            REB_OBJECT,
+            VAL_LEN_AT(vars),
+            NODE_FLAG_MANAGED
+        );
+        RELVAL *item = VAL_ARRAY_AT(vars);
+        for (; NOT_END(item); ++item) {   // !!! should check duplicates
+            if (not IS_WORD(item))
+                fail ("VARS block must be all words");
+            Append_Context(ctx, nullptr, VAL_WORD_SPELLING(item));
+        }
+    }
+
+    INIT_BINDING(D_OUT, ctx);
+
+    // We want to take a temporary read-only lock on the series for the
+    // duration of the iteration.  This is dropped when the iteration finishes
+    // naturally or when it is called with the /DONE refinement.
+    //
+    // The locks in question may be on MAP! data or OBJECT!s or plain arrays
+    // or strings or binaries.
+    //
+    // Unfortunately since our locks were stack based, they're not counted.
+    // :-(  
+    //
+    // We can have an "are there any locks" bit for easy checking by readers,
+    // but then the cost gets paid by those holding and releasing locks to
+    // deal with a lock table off to the side.
+    //
+    // !!! TBD
+
+    return D_OUT;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 //
 //  for: native [
 //
