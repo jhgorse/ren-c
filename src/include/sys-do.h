@@ -52,14 +52,11 @@ inline static bool Do_Feed_To_End_Maybe_Stale_Throws(
     REBFED *feed,  // feed mechanics always call va_end() if va_list
     REBFLGS flags
 ){
-    DECLARE_FRAME (f, feed, flags | EVAL_FLAG_ROOT_FRAME);
+    DECLARE_FRAME (f, feed, flags | EVAL_FLAG_ROOT_FRAME | EVAL_FLAG_TO_END);
+    INIT_F_EXECUTOR(f, &New_Expression_Executor);
 
-    bool threw;
     Push_Frame(out, f);
-    do {
-        f->executor = &New_Expression_Executor;
-        threw = (*PG_Trampoline_Throws)(f);
-    } while (not threw and NOT_END(feed->value));
+    bool threw = (*PG_Trampoline_Throws)(f);
 
     if (threw and IS_ERROR(VAL_THROWN_LABEL(f->out))) {
         if (Is_Action_Frame(f))

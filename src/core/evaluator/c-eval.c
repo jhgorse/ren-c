@@ -184,10 +184,23 @@ REB_R Finished_Executor(REBFRM *f)
     if (NOT_EVAL_FLAG(f, KEEP_STALE_BIT))
         f->out->header.bits &= ~(CELL_FLAG_OUT_MARKED_STALE);
 
-    if (GET_EVAL_FLAG(f, TO_END) and NOT_END(f->feed->value))
-        INIT_F_EXECUTOR(f, &New_Expression_Executor);
-    else
-        INIT_F_EXECUTOR(f, nullptr);
+    if (GET_EVAL_FLAG(f, TO_END)) {
+        if (NOT_END(f->feed->value))
+            INIT_F_EXECUTOR(f, &New_Expression_Executor);
+        else {
+            STATE_BYTE(f) = 0;
+            INIT_F_EXECUTOR(f, &Cleaner_Executor);
+            STATE_BYTE(f) = 101;
+        }
+    }
+    else if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE)) {
+        INIT_F_EXECUTOR(f, nullptr);  // owner must take care of cleaner
+    }
+    else {
+        STATE_BYTE(f) = 0;
+        INIT_F_EXECUTOR(f, &Cleaner_Executor);
+        STATE_BYTE(f) = 101;
+    }
     return f->out;
 }
 

@@ -66,6 +66,18 @@
     ARRAY_FLAG_24
 
 
+//=//// ARRAY_FLAG_DEFERRED_CODE //////////////////////////////////////////=//
+//
+// When a frame is being freed, the API handles are freed but also some code
+// runs in a fashion similar to the `defer` feature of Go, if any has been
+// registered.  Because of the similar concerns for when to run and how to
+// track, the nodes are tracked with the same mechanism as API handles...just
+// with a flag to indicate it contains code intended to run.
+//
+#define ARRAY_FLAG_DEFERRED_CODE \
+    ARRAY_FLAG_25
+
+
 // What distinguishes an API value is that it has both the NODE_FLAG_CELL and
 // NODE_FLAG_ROOT bits set.
 //
@@ -133,7 +145,7 @@ inline static void Unlink_Api_Handle_From_Frame(REBARR *a)
 //
 // Revolt manages by default.
 //
-inline static REBVAL *Alloc_Value(void)
+inline static REBVAL *Alloc_Value_Core(REBFRM *f)
 {
     REBARR *a = Alloc_Singular(NODE_FLAG_ROOT | NODE_FLAG_MANAGED);
 
@@ -156,10 +168,13 @@ inline static REBVAL *Alloc_Value(void)
     // be responsible for marking the node live, freeing the node in case
     // of a fail() that interrupts the frame, and reporting any leaks.
     //
-    Link_Api_Handle_To_Frame(a, FS_TOP);
+    Link_Api_Handle_To_Frame(a, f);
 
     return v;
 }
+
+#define Alloc_Value() \
+    Alloc_Value_Core(FS_TOP)
 
 inline static void Free_Value(REBVAL *v)
 {

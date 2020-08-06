@@ -46,6 +46,62 @@
 
 
 //
+//  Cleaner_Executor: C
+//
+// Whether a frame has succeeded or failed, the Cleanup_Executor() has to
+// be run on it.  This will run any DEFER functions.  It should be the last
+// executor that is put into effect.
+//
+REB_R Cleaner_Executor(REBFRM *f)
+{
+    enum {
+        CLEANER_RUNNING_THROWN = 88,
+        CLEANER_RUNNING_NORMAL = 101
+    };
+
+    switch (STATE_BYTE(f)) {
+      case CLEANER_RUNNING_THROWN: goto process_next_deferred;
+      case CLEANER_RUNNING_NORMAL: goto process_next_deferred;
+      default: assert(false);
+    }
+
+    // !!! This might be the best place to complain about leaked API handles,
+    // based on the ABRUPT_FAILURE status of the frame (?)
+    //
+  process_next_deferred: {
+    REBNOD *n = f->alloc_value_list;
+    for (; n != NOD(f); n = LINK(ARR(n)).custom.node) {
+        REBARR *a = ARR(n);
+        if (NOT_ARRAY_FLAG(a, DEFERRED_CODE))
+            continue;
+
+        REBVAL *code = KNOWN(ARR_SINGLE(a));
+
+        Push_Continuation_With(
+            FRM_SPARE(f),  // !!! Making non f->out legal output is WIP
+            f,
+            EVAL_FLAG_DISPATCHER_CATCHES,
+            code,  // gets copied to new frame so freeing is not a problem
+            END_NODE  // no /WITH for block execution
+        );
+        Free_Value(code);
+
+        return R_CONTINUATION;
+    }
+
+    INIT_F_EXECUTOR(f, nullptr);  // Okay, now we're really done
+    if (STATE_BYTE(f) == CLEANER_RUNNING_THROWN) {
+        Init_Thrown_With_Label(f->out, f->out, DS_TOP);
+        DS_DROP();
+        return R_THROWN;
+    }
+    assert(STATE_BYTE(f) == CLEANER_RUNNING_NORMAL);
+    return f->out;  // we should not have changed f->out
+  }
+}
+
+
+//
 //  Trampoline_Throws: C
 //
 // !!! The end goal is that this function is never found recursively on a
@@ -229,9 +285,18 @@ bool Trampoline_Throws(REBFRM *f)
         // (distinct from the 'nullptr' which signals normal execution done).
         // This is because the trashing is not necessary in release builds
         //
-        assert(f->executor != nullptr);
         assert(not IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
-        TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
+
+        if (f->executor != nullptr) {
+            Move_Value(DS_PUSH(), VAL_THROWN_LABEL(f->out));
+            CATCH_THROWN(f->out, f->out);
+            STATE_BYTE(f) = 0;
+            INIT_F_EXECUTOR(f, &Cleaner_Executor);
+            STATE_BYTE(f) = 88;
+            goto loop;
+        }
+
+        TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // cleaner finished
     }
     else
         assert((f->executor == &Action_Executor) == (f->original != nullptr));
@@ -306,6 +371,7 @@ bool Trampoline_Throws(REBFRM *f)
             }
             else {
                 DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
+                STATE_BYTE(f) = 0;  // !!! Frame gets reused, review
                 return false;
             }
         }
@@ -576,4 +642,27 @@ REBNATIVE(wait2)
     assert(IS_UNREADABLE_DEBUG(D_OUT));
     return Init_Void(D_OUT);
   }
+}
+
+
+//
+//  defer: native [
+//
+//  {Add code that will run when the implied FRAME! ends}
+//
+//      return: [void!]
+//      code [block!]
+//  ]
+//
+REBNATIVE(defer)
+{
+    INCLUDE_PARAMS_OF_DEFER;
+
+    REBVAL *deferred = Alloc_Value_Core(frame_->prior);
+    REBARR *a = Singular_From_Cell(deferred);
+    SET_ARRAY_FLAG(a, DEFERRED_CODE);
+
+    Move_Value(deferred, ARG(code));
+
+    return Init_Void(D_OUT);
 }
