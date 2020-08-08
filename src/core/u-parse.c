@@ -559,44 +559,6 @@ REB_R Process_Group_For_Parse(
 
 
 //
-//  Parse_Group_Executor: C
-//
-// Historically a single group in PARSE ran code, discarding the value (with
-// a few exceptions when appearing in an argument position to a rule).  Ren-C
-// adds another behavior for GET-GROUP!, e.g. :(...).  This makes them act
-// like a COMPOSE/ONLY that runs each time they are visited.
-//
-REB_R Parse_Group_Executor(REBFRM *f)
-{
-    if (Is_Throwing(f))
-        return R_THROWN;
-
-    // We don't want to over-aggressively Derelativize() values we don't need
-    // to.  So we don't pass in the GROUP! or GET-GROUP! value, just a flag.
-    //
-    bool inject = VAL_LOGIC(FRM_SPARE(f));  // true if it was a GET-GROUP!
-
-    // !!! The input is not locked from modification by agents other than the
-    // PARSE's own REMOVE/etc.  This is a sketchy idea, but as long as it's
-    // allowed, each time arbitrary user code runs, rules have to be adjusted
-    //
-    if (P_POS > P_INPUT_LEN)
-        P_POS = P_INPUT_LEN;
-
-    if (NOT_END(f->out))
-        if (not inject or IS_NULLED(f->out))  // even GET-GROUP! discards null
-            SET_END(f->out);
-
-    assert(STATE_BYTE(f) == ST_PARSE_EVALUATING_GROUP);
-    STATE_BYTE(f) = 0;  // !!! Executor checks
-    INIT_F_EXECUTOR(f, &Parse_Executor);  // return to prior parsing
-    STATE_BYTE(f) = ST_PARSE_EVALUATING_GROUP;
-    assert(IS_END(f->out) or not IS_NULLED(f->out));
-    return f->out;
-}
-
-
-//
 //  Parse_One_Rule: C
 //
 // Used for parsing ANY-SERIES! to match the next rule in the ruleset.  If it
@@ -1607,12 +1569,16 @@ REB_R Parse_Executor(REBFRM *frame_) {
             assert(IS_NULLED(P_OUT));  // temporary due to BLANK! continuation
             SET_END(P_OUT);
             goto pre_rule_reset_begin;  // sets `rule`
+
           case ST_PARSE_EVALUATING_GROUP:
             goto group_was_evaluated;  // sets the `rule` or `goto pre_rule;`
+
           case ST_PARSE_PROCESSING_SUBRULES:
             goto subrules_completed;
+
           case ST_PARSE_DOING_KEEP_BLOCK:
             goto get_keep_block_done;
+
           default: assert(false);
         }
     }
@@ -1713,12 +1679,12 @@ REB_R Parse_Executor(REBFRM *frame_) {
         DECLARE_FEED_AT_CORE (subfeed, P_RULE, P_RULE_SPECIFIER);
         DECLARE_FRAME (subframe, subfeed,
             EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END | EVAL_FLAG_ALLOCATED_FEED);
-        STATE_BYTE(f) = 0;  // !!! INIT_F_EXECUTOR checks
-        INIT_F_EXECUTOR(f, &Parse_Group_Executor);
-        Init_Logic(FRM_SPARE(f), IS_GET_GROUP(P_RULE));
+
         INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
         assert(IS_END(P_OUT));
         Push_Frame(P_OUT, subframe);
+
+        Init_Logic(FRM_SPARE(f), IS_GET_GROUP(P_RULE));
         D_STATE_BYTE = ST_PARSE_EVALUATING_GROUP;
         return R_CONTINUATION;
       }
@@ -1726,6 +1692,23 @@ REB_R Parse_Executor(REBFRM *frame_) {
       group_was_evaluated: {
         if (Is_Throwing(f))
             goto return_thrown;
+
+        // We don't over-aggressively Derelativize() values we don't need
+        // to.  So we don't pass the GROUP! or GET-GROUP!, just a flag.
+        //
+        bool inject = VAL_LOGIC(FRM_SPARE(f));  // true -> a GET-GROUP!
+
+        // !!! Input is not locked from modification by agents other than
+        // PARSE's own REMOVE/etc.  This is a sketchy idea, but as long as
+        // it's allowed, each time arbitrary user code runs, rules have to
+        // be adjusted
+        //
+        if (P_POS > P_INPUT_LEN)
+            P_POS = P_INPUT_LEN;
+
+        if (NOT_END(f->out))  // even GET-GROUP! discards null
+            if (not inject or IS_NULLED(f->out))
+                SET_END(f->out);
 
         if (IS_END(P_OUT)) {  // was a (...), or null-bearing :(...)
             FETCH_NEXT_RAW_RULE(f);  // ignore result and go on to next rule
