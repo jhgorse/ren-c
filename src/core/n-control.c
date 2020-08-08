@@ -46,6 +46,56 @@
 
 
 //
+//  Brancher_Executor: C
+//
+// !!! Does a double-execution on its branch.  Uses a new idea of a preloaded
+// frame `->spare` cell to hold an argument without needing a varlist.  Used
+// to implement code-generating branches which don't run unless they match,
+// as opposed to using plain GROUP! which would generate unused code:
+//
+//    >> either 1 @(print "one" [2 + 3]) @(print "run" [4 + 5])
+//    one
+//    == 5
+//
+REB_R Brancher_Executor(REBFRM *frame_)
+{
+    if (IS_GROUP(D_SPARE) or IS_SYM_GROUP(D_SPARE)) {
+        mutable_KIND_BYTE(D_SPARE) = mutable_MIRROR_BYTE(D_SPARE) = REB_BLOCK;
+        STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is initial_entry
+        CONTINUE (D_SPARE);
+    }
+
+    assert(IS_BLOCK(D_SPARE));
+
+    if (not (  // ... any of the legal branch types
+        IS_BLOCK(D_OUT)
+        or IS_QUOTED(D_OUT)
+        or IS_SYM_WORD(D_OUT)
+        or IS_SYM_PATH(D_OUT)
+        or IS_SYM_GROUP(D_OUT)
+        or IS_BLANK(D_OUT)
+    )){
+        fail ("Invalid branch type produced by SYM-GROUP! redone branch");
+    }
+
+    Move_Value(D_SPARE, D_OUT);
+
+    // !!! The current intent of "delegate" only works for dispatchers that
+    // coordinate with Action_Executor(), because the executor still gets
+    // called in order to finalize.  The emerging concept of an executor
+    // that signals not wanting to be called back with nullptr is that it
+    // does not heed the delegation flag used for that purpose.  This is a
+    // work in progress.  We can't say nullptr since we're returning a
+    // continuation, so use the Finished_Executor().
+    //
+    STATE_BYTE(frame_) = 0;  // !!! Hack to pass INIT_F_EXECUTOR() check
+    INIT_F_EXECUTOR(frame_, &Finished_Executor);
+    STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is initial_entry
+    CONTINUE (D_SPARE);
+}
+
+
+//
 //  if: native [
 //
 //  {When TO LOGIC! CONDITION is true, execute branch}
