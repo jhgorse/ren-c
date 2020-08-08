@@ -967,3 +967,58 @@ inline static REBVAL *Constify(REBVAL *v) {
     REBVAL name##_cell; \
     Prep_Cell(&name##_cell); \
     REBVAL * const name = &name##_cell;
+
+
+//=//// DEBUG CHECK FOR TYPE AND PASS THROUGH /////////////////////////////=//
+//
+// This helps avoid the pattern:
+//
+//     assert(IS_SOME_TYPE(some_value));
+//     Some_Function(..., some_value);
+//
+// Letting you write it more simply as:
+//
+//     Some_Function(..., ensure(SOME_TYPE, some_value));
+//
+// It sacrificies constness and cell subclass info in the C build, but the
+// C++ build will keep the types consistent and error if its wrong.
+
+#ifdef NDEBUG
+    #define ensure(kind,v) \
+        v
+#else
+    #ifndef __cplusplus
+        inline static REBVAL *Ensure_Helper_Debug(
+            enum Reb_Kind kind,
+            const RELVAL *v,
+            const char *name,
+            const char *file,
+            int line
+        ){
+            if (kind != VAL_TYPE(v)) {
+                printf ("Expected type to be %s, but it wasn't", name);
+                panic_at (v, file, line);
+            }
+            return (REBVAL*)v;  // discard const/etc., trust C++ build for it
+        }
+
+    #else
+        template<typename T>
+        inline static T Ensure_Helper_Debug(
+            enum Reb_Kind kind,
+            T v,
+            const char *name,
+            const char *file,
+            int line
+        ){
+            if (kind != VAL_TYPE(v)) {
+                printf ("Expected type to be %s, but it wasn't", name);
+                panic_at (v, file, line);
+            }
+            return v;
+        }
+    #endif
+
+    #define ensure(kind,v) \
+        Ensure_Helper_Debug(REB_##kind, (v), #kind, __FILE__, __LINE__)
+#endif
