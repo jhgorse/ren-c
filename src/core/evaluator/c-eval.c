@@ -139,8 +139,7 @@ inline static bool Was_Rightward_Continuation_Needed(
 
     SET_END(f->out);  // `1 x: comment "hi"` shouldn't set x to 1!
 
-    REBNAT executor;
-    if (Did_Init_Inert_Optimize_Complete(f->out, f->feed, &flags, &executor))
+    if (Did_Init_Inert_Optimize_Complete(f->out, f->feed, &flags))
         return false;  // If eval not hooked, ANY-INERT! may not need a frame
 
     // Can't SET_END() here, because sometimes it would be overwriting what
@@ -148,7 +147,7 @@ inline static bool Was_Rightward_Continuation_Needed(
     // was necessary.
 
     DECLARE_FRAME (subframe, f->feed, flags);
-    subframe->executor = executor;
+    subframe->executor = &Evaluator_Executor;
 
     Push_Frame(f->out, subframe);
 
@@ -297,17 +296,6 @@ REB_R Evaluator_Executor(REBFRM *f)
     const RELVAL *v;
     const REBVAL *gotten;
 
-    if (STATE_BYTE(f) == ST_EVALUATOR_INITIAL_ENTRY)
-        goto new_expression;
-
-    if (STATE_BYTE(f) == ST_EVALUATOR_REEVALUATING) {
-        v = f->u.reval.value;
-        gotten = nullptr;
-        kind.byte = KIND_BYTE(v);
-        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
-        goto evaluate;
-    }
-
   #if !defined(NDEBUG)
     TRASH_POINTER_IF_DEBUG(v);
     TRASH_POINTER_IF_DEBUG(gotten);
@@ -315,6 +303,9 @@ REB_R Evaluator_Executor(REBFRM *f)
   #endif
 
     switch (STATE_BYTE(f)) {
+     case ST_EVALUATOR_INITIAL_ENTRY:
+        goto new_expression;
+
       case ST_EVALUATOR_EXECUTING_GROUP:
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto group_execution_done;
@@ -339,9 +330,7 @@ REB_R Evaluator_Executor(REBFRM *f)
             STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
             goto evaluate;
         }
-        STATE_BYTE(f) = 0;
-        INIT_F_EXECUTOR(f, &Lookahead_Executor);
-        return R_CONTINUATION;
+        goto lookahead;
 
       case ST_EVALUATOR_SET_WORD_RIGHT_SIDE:
         v = ensure(SET_WORD, f_spare);
@@ -357,6 +346,16 @@ REB_R Evaluator_Executor(REBFRM *f)
         v = ensure(SET_GROUP, f_spare);
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_group_with_out;
+
+      case ST_EVALUATOR_LOOKING_AHEAD:
+        goto lookahead;
+
+      case ST_EVALUATOR_REEVALUATING:
+        v = f->u.reval.value;
+        gotten = nullptr;
+        kind.byte = KIND_BYTE(v);
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto evaluate;
 
       default:
         assert(false);
@@ -776,12 +775,10 @@ REB_R Evaluator_Executor(REBFRM *f)
         if (NOT_END(f->out)) {
             if (NOT_CELL_FLAG(f->out, OUT_MARKED_STALE))
                 CLEAR_CELL_FLAG(f->out, UNEVALUATED);  // `(1)` is evaluative
-            STATE_BYTE(f) = 0;
-            INIT_F_EXECUTOR(f, &Lookahead_Executor);
-            return f->out;
+            goto lookahead;
         }
 
-        if (IS_END(F_VALUE(f))) {  // no input to reeval for missing output
+        if (IS_END(f_next)) {  // no input to reeval for missing output
             f->out->header.bits &= ~CELL_FLAG_OUT_MARKED_STALE;
             STATE_BYTE(f) = 0;
             INIT_F_EXECUTOR(f, &Finished_Executor);
@@ -1010,7 +1007,7 @@ REB_R Evaluator_Executor(REBFRM *f)
         else if (IS_ACTION(f_spare)) {
             if (Eval_Value_Throws(f->out, f_spare, SPECIFIED))  // only 0-args
                 goto return_thrown;
-            goto post_switch;
+            goto lookahead;
         }
         else
             fail (Error_Bad_Get_Group_Raw());
@@ -1397,69 +1394,41 @@ REB_R Evaluator_Executor(REBFRM *f)
     }
     */
 
-  post_switch:
-    STATE_BYTE(f) = 0;
-    INIT_F_EXECUTOR(f, &Lookahead_Executor);
-    return R_CONTINUATION;
+  lookahead: {
 
-    // Stay THROWN and let stack levels above try and catch
+//=//// LOOKAHEAD PROCESSING //////////////////////////////////////////////=//
 
-  return_thrown:
-    return R_THROWN;
+    // When we are sitting at what "looks like the end" of an evaluation step, 
+    // we still have to consider enfix.  e.g.
+    //
+    //    [pos val]: evaluate [1 + 2 * 3]
+    //
+    // We want that to give a position of [] and `val = 9`.  The evaluator
+    // cannot just dispatch on REB_INTEGER in the switch() above, give you 1,
+    // and consider its job done.  It has to notice that the word `+` looks up
+    // to an ACTION! that was assigned with SET/ENFIX, and keep going.
+    //
+    // Next, there's a subtlety with FEED_FLAG_NO_LOOKAHEAD which explains why
+    // processing of the 2 argument doesn't greedily continue to advance, but
+    // waits for `1 + 2` to finish.
+    //
+    // Slightly more nuanced is why PARAMLIST_IS_INVISIBLE functions have to
+    // be considered in the lookahead also.  Consider this case:
+    //
+    //    [pos val]: evaluate [1 + 2 * comment ["hi"] 3 4 / 5]
+    //
+    // We want `val = 9`, with `pos = [4 / 5]`.  To do this, we can't conside
+    // an evaluation finished until all the "invisibles" have been processed.
+    //
+    // If that's not enough to consider :-) it can even be the case that
+    // subsequent enfix gets "deferred".  Then, possibly later the evaluated
+    // value gets re-fed back in, and we jump right to this post-switch point
+    // to give it a "second chance" to take the enfix.  (See 'deferred'.)
+    //
 
-  finished:
-    STATE_BYTE(f) = 0;
-    INIT_F_EXECUTOR(f, &Finished_Executor);
-    return f->out;
-}
-
-
-//
-//  Lookahead_Executor: C
-//
-// When we are sitting at what "looks like the end" of an evaluation step, we
-// still have to consider enfix.  e.g.
-//
-//    [pos val]: evaluate [1 + 2 * 3]
-//
-// We want that to give a position of [] and `val = 9`.  The evaluator
-// cannot just dispatch on REB_INTEGER in the switch() above, give you 1,
-// and consider its job done.  It has to notice that the word `+` looks up
-// to an ACTION! that was assigned with SET/ENFIX, and keep going.
-//
-// Next, there's a subtlety with FEED_FLAG_NO_LOOKAHEAD which explains why
-// processing of the 2 argument doesn't greedily continue to advance, but
-// waits for `1 + 2` to finish.
-//
-// Slightly more nuanced is why PARAMLIST_IS_INVISIBLE functions have to be
-// considered in the lookahead also.  Consider this case:
-//
-//    [pos val]: evaluate [1 + 2 * comment ["hi"] 3 4 / 5]
-//
-// We want `val = 9`, with `pos = [4 / 5]`.  To do this, we can't consider an
-// evaluation finished until all the "invisibles" have been processed.
-//
-// If that's not enough to consider :-) it can even be the case that
-// subsequent enfix gets "deferred".  Then, possibly later the evaluated
-// value gets re-fed back in, and we jump right to this post-switch point
-// to give it a "second chance" to take the enfix.  (See 'deferred'.)
-//
-// So this post-switch step is where all of it happens, and it's tricky!
-//
-REB_R Lookahead_Executor(REBFRM *f)
-{
-    enum {
-        ST_LOOKAHEAD_INITIAL_ENTRY = 0,
-        ST_LOOKAHEAD_RUNNING_ENFIX
-    };
-
-    if (Is_Throwing(f))  // this executor itself fail()'ed, or action did
-        return R_THROWN;  // nothing to clean up
-
-    switch (STATE_BYTE(f)) {
-      case ST_LOOKAHEAD_INITIAL_ENTRY: break;
-      case ST_LOOKAHEAD_RUNNING_ENFIX: break;
-      default: assert(false);
+    if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)) {
+        assert(GET_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH));
+        fail (Error_Literal_Left_Path_Raw());
     }
 
     // If something was run with the expectation it should take the next arg
@@ -1482,14 +1451,14 @@ REB_R Lookahead_Executor(REBFRM *f)
     // enfix.  If it's necessary to dispatch an enfix function via path, then
     // a word is used to do it, like `->` in `x: -> lib/method [...] [...]`.
 
-    REBYTE kind_byte = KIND_BYTE(f_next);
+    kind.byte = KIND_BYTE(f_next);
 
-    if (kind_byte == REB_0_END) {
+    if (kind.byte == REB_0_END) {
         CLEAR_FEED_FLAG(f->feed, NO_LOOKAHEAD);
         goto finished;  // hitting end is common, avoid do_next's switch()
     }
 
-    if (kind_byte == REB_PATH) {
+    if (kind.byte == REB_PATH) {
         if (
             GET_FEED_FLAG(f->feed, NO_LOOKAHEAD)
             or MIRROR_BYTE(f_next) != REB_WORD
@@ -1506,7 +1475,7 @@ REB_R Lookahead_Executor(REBFRM *f)
         //
         assert(VAL_WORD_SYM(VAL_UNESCAPED(f_next)) == SYM__SLASH_1_);
     }
-    else if (kind_byte != REB_WORD) {
+    else if (kind.byte != REB_WORD) {
         CLEAR_FEED_FLAG(f->feed, NO_LOOKAHEAD);
         goto finished;
     }
@@ -1650,10 +1619,8 @@ REB_R Lookahead_Executor(REBFRM *f)
         SET_FEED_FLAG(f->feed, DEFERRING_ENFIX);
 
         // Leave the enfix operator pending in the frame, and it's up to the
-        // parent frame to decide whether to change the executor and use
-        // Lookahead_Executor to jump back in and finish fulfilling this arg or
-        // not.  If it does resume and we get to this check again,
-        // f->prior->deferred can't be null, else it'd be an infinite loop.
+        // parent frame to decide whether to use LOOKING_AHEAD state to jump
+        // back in and finish fulfilling this arg or not.
         //
         goto finished;
     }
@@ -1665,21 +1632,27 @@ REB_R Lookahead_Executor(REBFRM *f)
     // of parameter fulfillment.  We want to reuse the f->out value and get it
     // into the new function's frame.
 
-  blockscope {
-    DECLARE_ACTION_SUBFRAME (subframe, f);
-    Push_Frame(f->out, subframe);
-    Push_Action(
-        subframe,
-        VAL_ACTION(f_next_gotten),
-        VAL_BINDING(f_next_gotten)
-    );
-    Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(f_next));
+      blockscope {
+        DECLARE_ACTION_SUBFRAME (subframe, f);
+        Push_Frame(f->out, subframe);
+        Push_Action(
+            subframe,
+            VAL_ACTION(f_next_gotten),
+            VAL_BINDING(f_next_gotten)
+        );
+        Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(f_next));
 
-    Fetch_Next_Forget_Lookback(f);  // advances next
-  }
+        Fetch_Next_Forget_Lookback(f);  // advances next
+        STATE_BYTE(f) = ST_EVALUATOR_LOOKING_AHEAD;  // stay in this state
+        return R_CONTINUATION;
+      }
+    }
 
-    STATE_BYTE(f) = ST_LOOKAHEAD_RUNNING_ENFIX;
-    return R_CONTINUATION;
+  return_thrown:
+    //
+    // Stay THROWN and let stack levels above try and catch
+    //
+    return R_THROWN;
 
   finished:
 

@@ -946,12 +946,10 @@ REB_R Action_Executor(REBFRM *f)
 
             // If eval not hooked, ANY-INERT! may not need a frame
             //
-            REBNAT executor;
             if (Did_Init_Inert_Optimize_Complete(
                 f->arg,
                 f->feed,
-                &flags,
-                &executor
+                &flags
             )){
                 break;
             }
@@ -961,7 +959,7 @@ REB_R Action_Executor(REBFRM *f)
             // has already done it if it was necessary.
 
             DECLARE_FRAME (subframe, f->feed, flags);
-            subframe->executor = executor;
+            subframe->executor = &Evaluator_Executor;
 
             Push_Frame(f->arg, subframe);
             //
@@ -1053,20 +1051,21 @@ REB_R Action_Executor(REBFRM *f)
                 GET_ACTION_FLAG(VAL_ACTION(f->feed->gotten), QUOTES_FIRST)
             ){
                 // We need to defer and let the right hand quote that is
-                // quoting leftward win.  We use the EVAL_FLAG_POST_SWITCH
-                // flag to jump into a subframe where subframe->out is
-                // the f->arg, and it knows to get the arg from there.
+                // quoting leftward win.  We use the LOOKING_AHEAD state byte
+                // to jump into a subframe where subframe->out is the f->arg,
+                // and it knows to get the arg from there.
 
                 REBFLGS flags = EVAL_MASK_DEFAULT
                     | EVAL_FLAG_FULFILLING_ARG
                     | EVAL_FLAG_INERT_OPTIMIZATION
-                    | EVAL_FLAG_ROOT_FRAME;
+                    | EVAL_FLAG_ROOT_FRAME
+                    | FLAG_STATE_BYTE(ST_EVALUATOR_LOOKING_AHEAD);
 
                 if (IS_VOID(f_next))  // Eval_Step() has callers test this
                     fail (Error_Void_Evaluation_Raw());  // must be quoted
 
                 DECLARE_FRAME (subframe, f->feed, flags);
-                subframe->executor = &Lookahead_Executor;
+                subframe->executor = &Evaluator_Executor;
 
                 Push_Frame(f->arg, subframe);
                 bool threw = Eval_Throws(subframe);
