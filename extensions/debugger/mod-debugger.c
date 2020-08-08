@@ -229,8 +229,12 @@ static bool Reevaluate_In_Subframe_Maybe_Stale_Throws(
     const REBVAL *reval,
     REBFLGS flags
 ){
-    DECLARE_FRAME (subframe, f->feed, flags);
-    subframe->executor = &Reevaluation_Executor;
+    DECLARE_FRAME (
+        subframe,
+        f->feed,
+        flags | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
+    );
+    subframe->executor = &Evaluator_Executor;
     subframe->u.reval.value = reval;
 
     Push_Frame(out, subframe);

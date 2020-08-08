@@ -466,22 +466,6 @@ bool Trampoline_Throws(REBFRM *f)
         assert(r == f->out);
         assert(IS_SPECIFIC(cast(RELVAL*, f->out)));
 
-        // Want to keep this flag between an operation and an ensuing enfix in
-        // the same frame, so can't clear in Drop_Action(), e.g. due to:
-        //
-        //     left-lit: enfix :lit
-        //     o: make object! [f: does [1]]
-        //     o/f left-lit  ; want error suggesting -> here, need flag for that
-        //
-        /* // !!! v-- Said this originally, but stackless seemed to not work
-        CLEAR_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH);
-        assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));  // must be consumed
-        */
-        if (GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)) {
-            assert(GET_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH));
-            fail (Error_Literal_Left_Path_Raw());
-        }
-
         #if !defined(NDEBUG)
         //assert(NOT_EVAL_FLAG(f, DOING_PICKUPS));
         //assert(
@@ -554,7 +538,7 @@ REBNATIVE(go)
         SET_EVAL_FLAG(f, ALLOCATED_FEED);
         SET_EVAL_FLAG(f, TO_END);
 
-        INIT_F_EXECUTOR(f, &New_Expression_Executor);
+        INIT_F_EXECUTOR(f, &Evaluator_Executor);
     }
 
     // Now that the frame is built, we want it to be executed on its own

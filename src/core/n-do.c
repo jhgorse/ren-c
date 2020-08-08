@@ -62,10 +62,11 @@ REBNATIVE(reeval)
 
     Init_Void(D_OUT);  // `eval lit (comment "this gives void vs. error")`
 
-    REBFLGS flags = EVAL_MASK_DEFAULT;
+    REBFLGS flags = EVAL_MASK_DEFAULT
+        | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING);
 
     DECLARE_FRAME (subframe, frame_->feed, flags);
-    subframe->executor = &Reevaluation_Executor;
+    subframe->executor = &Evaluator_Executor;
     subframe->u.reval.value = ARG(value);
     Push_Frame(D_OUT, subframe);
 
@@ -292,8 +293,12 @@ REBNATIVE(shove)
         if (not REF(enfix) and GET_ACTION_FLAG(VAL_ACTION(shovee), ENFIXED))
             fail ("SHOVE/SET/ENFIX must be used with enfix function");
 
-        DECLARE_FRAME (subframe, f->feed, EVAL_MASK_DEFAULT);
-        subframe->executor = &Reevaluation_Executor;
+        DECLARE_FRAME (
+            subframe,
+            f->feed,
+            EVAL_MASK_DEFAULT | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
+        );
+        subframe->executor = &Evaluator_Executor;
 
         // Nuance here is needed for `x: me + 10` vs. `x: my add 10`.  Review.
         //
@@ -426,7 +431,7 @@ REBNATIVE(do)
 
         Init_Void(D_OUT);  // in case all invisibles, as usual
         Push_Frame(D_OUT, subframe);
-        INIT_F_EXECUTOR(subframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
 
         SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
         STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is for initial_entry
@@ -518,7 +523,7 @@ REBNATIVE(do)
 
         Init_Void(D_OUT);  // in case all invisibles, as usual
         Push_Frame(D_OUT, subframe);
-        INIT_F_EXECUTOR(subframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
 
         SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
         STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is for initial_entry
@@ -606,7 +611,7 @@ REBNATIVE(evaluate)
             EVAL_MASK_DEFAULT
                 | EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // we need `index` of feed
         );
-        INIT_F_EXECUTOR(subframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
 
         // !!! We are evaluating into D_SPARE instead of D_OUT.  This isn't
         // strictly necessary, and it complicates error handling...but it's

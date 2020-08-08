@@ -94,6 +94,24 @@
 #endif
 
 
+// Evaluator_Executor() has its internal states in this header file, so that
+// a frame can be made with e.g. `FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)`
+// to start in various points of the evaluation process.  When doing so, be
+// sure the expected frame variables for that state are initialized.
+//
+enum {
+    ST_EVALUATOR_INITIAL_ENTRY = 0,
+    ST_EVALUATOR_EVALUATING,
+    ST_EVALUATOR_EXECUTING_GROUP,
+    ST_EVALUATOR_RUNNING_ACTION,
+    ST_EVALUATOR_SET_WORD_RIGHT_SIDE,
+    ST_EVALUATOR_SET_PATH_RIGHT_SIDE,
+    ST_EVALUATOR_SET_GROUP_RIGHT_SIDE,
+
+    ST_EVALUATOR_REEVALUATING
+};
+
+
 // Helper for calling Trampoline_Throws(), which acts through a function
 // pointer...so that if there is a hooked trampoline it won't be skipped.
 //
@@ -142,9 +160,11 @@ inline static bool Did_Init_Inert_Optimize_Complete(
 ){
     assert(not IS_END(feed->value));  // would be wasting time to call
 
+    TRASH_POINTER_IF_DEBUG(*executor_out);
+
     if (not ANY_INERT(feed->value) or not OPTIMIZATIONS_OK) {
         SET_END(out);  // Have to Init() `out` one way or another...
-        *executor_out = &New_Expression_Executor;
+        *executor_out = &Evaluator_Executor;
         return false;  // general case evaluation requires a frame
     }
 
@@ -236,7 +256,7 @@ inline static bool Eval_Step_Maybe_Stale_Throws(
 
     f->out = out;
     f->baseline.dsp = DSP;
-    f->executor = &New_Expression_Executor;
+    f->executor = &Evaluator_Executor;
     return (*PG_Trampoline_Throws)(f); // should already be pushed;
 }
 
@@ -259,7 +279,7 @@ inline static bool Eval_Step_In_Subframe_Throws(
     REBFRM *f,
     REBFLGS flags
 ){
-    REBNAT executor = &New_Expression_Executor;
+    REBNAT executor = &Evaluator_Executor;
 /*    if (Did_Init_Inert_Optimize_Complete(out, f->feed, &flags, &executor))
         return false;  // If eval not hooked, ANY-INERT! may not need a frame */
 
@@ -303,7 +323,7 @@ inline static bool Eval_Step_In_Any_Array_At_Throws(
         specifier,
         flags | EVAL_FLAG_ALLOCATED_FEED
     );
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
 
     Push_Frame(out, f);
     bool threw = Eval_Throws(f);
@@ -347,7 +367,7 @@ inline static bool Eval_Step_In_Va_Throws_Core(
     DECLARE_VA_FEED (feed, p, vaptr, feed_flags);
 
     DECLARE_FRAME (f, feed, eval_flags | EVAL_FLAG_ROOT_FRAME);
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
 
     Push_Frame(out, f);
     bool threw = Eval_Throws(f);
@@ -401,7 +421,7 @@ inline static bool Eval_Value_Throws(
     );
 
     DECLARE_FRAME (f, feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
 
     Push_Frame(out, f);
     bool threw = Eval_Throws(f);

@@ -63,8 +63,11 @@ REBNATIVE(reduce)
         if (ANY_INERT(v))
             RETURN (v);  // save time if it's something like a TEXT!
 
-        DECLARE_END_FRAME (subframe, EVAL_MASK_DEFAULT);
-        subframe->executor = &Reevaluation_Executor;
+        DECLARE_END_FRAME (
+            subframe,
+            EVAL_MASK_DEFAULT | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
+        );
+        subframe->executor = &Evaluator_Executor;
         subframe->u.reval.value = v;
         Push_Frame(D_OUT, subframe);
 
@@ -80,7 +83,7 @@ REBNATIVE(reduce)
             | EVAL_FLAG_ALLOCATED_FEED
             | EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // reused for each step
     );
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     SET_END(D_OUT);  // result if all invisibles
     Push_Frame(D_OUT, f);
 
@@ -135,7 +138,7 @@ REBNATIVE(reduce)
         if (NOT_END(F_VALUE(f))) {
             SET_END(D_OUT);  // result if all invisibles
             Init_Logic(D_SPARE, GET_CELL_FLAG(F_VALUE(f), NEWLINE_BEFORE));
-            INIT_F_EXECUTOR(f, &New_Expression_Executor);
+            INIT_F_EXECUTOR(f, &Evaluator_Executor);
             assert(D_STATE_BYTE == ST_REDUCE_EVAL_STEP);
             return R_CONTINUATION;
         }
@@ -295,7 +298,7 @@ REB_R Composer_Executor(REBFRM *f) {
         );
         Push_Frame(D_OUT, groupframe);
 
-        INIT_F_EXECUTOR(groupframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(groupframe, &Evaluator_Executor);
         Init_Nulled(f->out);  // want empty `()` to vanish as a null would
         return R_CONTINUATION;
     }

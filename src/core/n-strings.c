@@ -145,7 +145,7 @@ REBNATIVE(delimit)
   next_step:
     if (NOT_END(f->feed->value)) {
         Init_Nulled(D_OUT);  // e.g. spaced ["" ()], reset output
-        INIT_F_EXECUTOR(f, &New_Expression_Executor);
+        INIT_F_EXECUTOR(f, &Evaluator_Executor);
         return R_CONTINUATION;
     }
 

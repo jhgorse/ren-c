@@ -1716,7 +1716,7 @@ REB_R Parse_Executor(REBFRM *frame_) {
         STATE_BYTE(f) = 0;  // !!! INIT_F_EXECUTOR checks
         INIT_F_EXECUTOR(f, &Parse_Group_Executor);
         Init_Logic(FRM_SPARE(f), IS_GET_GROUP(P_RULE));
-        INIT_F_EXECUTOR(subframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
         assert(IS_END(P_OUT));
         Push_Frame(P_OUT, subframe);
         D_STATE_BYTE = ST_PARSE_EVALUATING_GROUP;

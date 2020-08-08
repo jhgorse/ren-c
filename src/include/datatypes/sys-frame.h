@@ -153,6 +153,9 @@ inline static int FRM_LINE(REBFRM *f) {
       { return mutable_SECOND_BYTE(f->flags); }  // ...but mutable
 #endif
 
+#define FLAG_STATE_BYTE(state) \
+    FLAG_SECOND_BYTE(state)
+
 
 inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
 {
@@ -750,7 +753,7 @@ inline static REBFRM *Push_Continuation_At(REBVAL *out, REBVAL *any_array) {
             | EVAL_FLAG_ALLOCATED_FEED
             | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
     );
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     Push_Frame(out, f);
     return f;
 }
@@ -1169,7 +1172,7 @@ inline static REBFRM *Push_Continuation_With_Core(
 
         Init_Void(out);  // in case all invisibles, as usual
         Push_Frame(out, blockframe);
-        INIT_F_EXECUTOR(blockframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(blockframe, &Evaluator_Executor);
         return blockframe; }
 
       case REB_ACTION: {

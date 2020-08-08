@@ -824,7 +824,7 @@ REBNATIVE(all)
         // ^-- Note: might be "stale", as in `all [true elide 1 + 2]`
     }
 
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     assert(D_STATE_BYTE == ST_ALL_EVAL_STEP);
     return R_CONTINUATION;
   }
@@ -880,7 +880,7 @@ REBNATIVE(any)
         return nullptr;
     }
 
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     assert(D_STATE_BYTE == ST_ANY_EVAL_STEP);
     return R_CONTINUATION;
   }
@@ -939,7 +939,7 @@ REBNATIVE(none)
         return Init_True(D_OUT);  // !!! suggests LOGIC! on failure, bad?
     }
 
-    INIT_F_EXECUTOR(f, &New_Expression_Executor);
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     assert(D_STATE_BYTE == ST_NONE_EVAL_STEP);
     return R_CONTINUATION;
   }
@@ -1044,7 +1044,7 @@ REBNATIVE(case)
         Begin_Prefix_Action(f, VAL_WORD_SPELLING(predicate_label));
     }
     else
-        INIT_F_EXECUTOR(f, &New_Expression_Executor);
+        INIT_F_EXECUTOR(f, &Evaluator_Executor);
 
     D_STATE_BYTE = ST_CASE_EVALUATING_CONDITION;
     return R_CONTINUATION;
@@ -1081,7 +1081,7 @@ REBNATIVE(case)
             // means it should do whatever that does w.r.t. enfix, etc.
             // Review implications.
             //
-            f->executor = &New_Expression_Executor;
+            f->executor = &Evaluator_Executor;
 
             D_STATE_BYTE = ST_CASE_SKIPPING_GROUP_BRANCH;
             return R_CONTINUATION;

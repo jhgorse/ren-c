@@ -139,7 +139,7 @@ inline static bool Was_Rightward_Continuation_Needed(
 
     SET_END(f->out);  // `1 x: comment "hi"` shouldn't set x to 1!
 
-    REBNAT executor = &New_Expression_Executor;
+    REBNAT executor;
     if (Did_Init_Inert_Optimize_Complete(f->out, f->feed, &flags, &executor))
         return false;  // If eval not hooked, ANY-INERT! may not need a frame
 
@@ -152,12 +152,13 @@ inline static bool Was_Rightward_Continuation_Needed(
 
     Push_Frame(f->out, subframe);
 
-    if (CURRENT_CHANGES_IF_FETCH_NEXT) {
-        Derelativize(f_spare, v, f_specifier);
-        f->u.reval.value = f_spare;
-    }
-    else
-        f->u.reval.value = v;
+    // We save the WORD!/PATH! to write in the spare slot of this frame.
+    //
+    // !!! A more optimal strategy could re-use the same frame and DS_PUSH()
+    // words and paths to the stack.  Also, derelativization could be avoided
+    // if not CURRENT_CHANGES_IF_FETCH_NEXT.
+    //
+    Derelativize(f_spare, v, f_specifier);
 
     return true;
 }
@@ -186,7 +187,7 @@ REB_R Finished_Executor(REBFRM *f)
 
     if (GET_EVAL_FLAG(f, TO_END)) {
         if (NOT_END(f->feed->value))
-            INIT_F_EXECUTOR(f, &New_Expression_Executor);
+            INIT_F_EXECUTOR(f, &Evaluator_Executor);
         else {
             STATE_BYTE(f) = 0;
             INIT_F_EXECUTOR(f, &Cleaner_Executor);
@@ -256,12 +257,11 @@ REB_R Brancher_Executor(REBFRM *frame_)
 
 
 //
-//  New_Expression_Executor: C
+//  Evaluator_Executor: C
 //
-// This is the continuation dispatcher for what would be considered a new
-// single step in the evaluator.  That can be from the point of view of the
-// debugger, or just in terms of marking the point at which an error message
-// would begin.
+// Try and encapsulate the main frame work but without actually looping.
+// This means it needs more return results than just `bool` for threw.
+// It gives it the same signature as a dispatcher.
 //
 // The frame's `->out` cell must be initialized bits before using this.
 // Whatever it contains will be marked with CELL_FLAG_OUT_MARKED_STALE, so
@@ -270,10 +270,101 @@ REB_R Brancher_Executor(REBFRM *frame_)
 // can fall through as the final output, as the flag is cleared in the
 // Finished_Executor().
 //
-REB_R New_Expression_Executor(REBFRM *f)
+REB_R Evaluator_Executor(REBFRM *f)
 {
-    if (Is_Throwing(f))
+    if (Is_Throwing(f)) {
+        //
+        // The Reevaluation executor does not catch throws or errors, and it
+        // has no state it needs to free during an unwind.
+        //
         return R_THROWN;
+    }
+
+    // Caching KIND_BYTE(*at) in a local can make a slight performance
+    // difference, though how much depends on what the optimizer figures out.
+    // Either way, it's useful to have handy in the debugger.
+    //
+    // Note: int8_fast_t picks `char` on MSVC, shouldn't `int` be faster?
+    // https://stackoverflow.com/a/5069643/
+    //
+    union {
+        int byte;  // values bigger than REB_64 are used for in-situ literals
+        enum Reb_Kind pun;  // for debug viewing *if* byte < REB_MAX_PLUS_MAX
+    } kind;
+
+    // `v` is the shorthand for the value we are switching on
+    //
+    const RELVAL *v;
+    const REBVAL *gotten;
+
+    if (STATE_BYTE(f) == ST_EVALUATOR_INITIAL_ENTRY)
+        goto new_expression;
+
+    if (STATE_BYTE(f) == ST_EVALUATOR_REEVALUATING) {
+        v = f->u.reval.value;
+        gotten = nullptr;
+        kind.byte = KIND_BYTE(v);
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto evaluate;
+    }
+
+  #if !defined(NDEBUG)
+    TRASH_POINTER_IF_DEBUG(v);
+    TRASH_POINTER_IF_DEBUG(gotten);
+    kind.byte = REB_T_TRASH;
+  #endif
+
+    switch (STATE_BYTE(f)) {
+      case ST_EVALUATOR_EXECUTING_GROUP:
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto group_execution_done;
+
+      case ST_EVALUATOR_RUNNING_ACTION:
+        //
+        // The Action_Executor does not get involved in Lookahead; so you
+        // only get lookahead behavior when an action has been spawned from
+        // a parent frame (such as one evaluating a block, or evaluating an
+        // action's arguments).  Trying to dispatch lookahead from the
+        // Action_Executor causes pain with `null then [x] => [1] else [2]`
+        // cases (for instance).
+        //
+        // However, the evaluation of an invisible can leave a stale value
+        // which indicates a need to invoke another evaluation.  Consider
+        // `do [comment "hi" 10]`.
+        //
+        if (NOT_END(f_next) and GET_CELL_FLAG(f->out, OUT_MARKED_STALE)) {
+            gotten = f_next_gotten;
+            v = Lookback_While_Fetching_Next(f);
+            kind.byte = KIND_BYTE(v);
+            STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+            goto evaluate;
+        }
+        STATE_BYTE(f) = 0;
+        INIT_F_EXECUTOR(f, &Lookahead_Executor);
+        return R_CONTINUATION;
+
+      case ST_EVALUATOR_SET_WORD_RIGHT_SIDE:
+        v = ensure(SET_WORD, f_spare);
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto set_word_with_out;
+
+      case ST_EVALUATOR_SET_PATH_RIGHT_SIDE:
+        v = ensure(SET_PATH, f_spare);
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto set_path_with_out;
+
+      case ST_EVALUATOR_SET_GROUP_RIGHT_SIDE:
+        v = ensure(SET_GROUP, f_spare);
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto set_group_with_out;
+
+      default:
+        assert(false);
+    }
+
+  new_expression: {
+
+//=//// START NEW EXPRESSION //////////////////////////////////////////////=//
 
     assert(DSP >= f->baseline.dsp);  // REDUCE accrues, APPLY adds refinements
     assert(not IS_TRASH_DEBUG(f->out));  // all invisible will preserve output
@@ -288,131 +379,28 @@ REB_R New_Expression_Executor(REBFRM *f)
     assert(NOT_FEED_FLAG(f->feed, DEFERRING_ENFIX));
   #endif
 
-//=//// START NEW EXPRESSION //////////////////////////////////////////////=//
-
     assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
     SET_CELL_FLAG(f->out, OUT_MARKED_STALE);  // internal use flag only
 
     UPDATE_EXPRESSION_START(f);  // !!! See FRM_INDEX() for caveats
 
-    // Caching KIND_BYTE(*at) in a local can make a slight performance
-    // difference, though how much depends on what the optimizer figures out.
-    // Either way, it's useful to have handy in the debugger.
-    //
-    // Note: int8_fast_t picks `char` on MSVC, shouldn't `int` be faster?
-    // https://stackoverflow.com/a/5069643/
-    //
-    union {
-        int byte;  // values bigger than REB_64 are used for in-situ literals
-        enum Reb_Kind pun;  // for debug viewing *if* byte < REB_MAX_PLUS_MAX
-    } kind;
-
     kind.byte = KIND_BYTE(f_next);
-
-    const RELVAL *v;  // don't want to jump past initialization
-    const REBVAL *gotten;
-
-    // If asked to evaluate `[]` then we have now done all the work the
-    // evaluator needs to do--including marking the output stale.
-    //
     if (kind.byte == REB_0_END)
         goto finished;
 
-    // shorthand for the value we are switch()-ing on
-
     v = Lookback_While_Fetching_Next(f);
-    // ^-- can't just `v = f_next`, fetch may overwrite--request lookback!
-
     gotten = f_next_gotten;
-    UNUSED(gotten);
+    f_next_gotten = nullptr;
 
-    assert(kind.byte == KIND_BYTE_UNCHECKED(v));
-    INIT_F_EXECUTOR(f, &Reevaluation_Executor);
-    f->u.reval.value = v;
-    return R_CONTINUATION;
+    STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+    goto evaluate;
+  }
 
-  finished:
-    INIT_F_EXECUTOR(f, &Finished_Executor);
-    return f->out;
-}
-
-
-//
-//  Reevaluation_Executor: C
-//
-// Try and encapsulate the main frame work but without actually looping.
-// This means it needs more return results than just `bool` for threw.
-// It gives it the same signature as a dispatcher.
-//
-REB_R Reevaluation_Executor(REBFRM *f)
-{
-    if (Is_Throwing(f)) {
-        //
-        // The Reevaluation executor does not catch throws or errors, and it
-        // has no state it needs to free during an unwind.
-        //
-        return R_THROWN;
-    }
-
-    union {
-        int byte;  // values bigger than REB_64 are used for in-situ literals
-        enum Reb_Kind pun;  // for debug viewing *if* byte < REB_MAX_PLUS_MAX
-    } kind;
-
-    // `v` is the shorthand for the value we are switching on
-    //
-    const RELVAL *v = f->u.reval.value;
-    const REBVAL *gotten = nullptr;
-    kind.byte = KIND_BYTE(v);
-
-    enum {
-        ST_EVALUATOR_REEVALUATING = 0,
-        ST_EVALUATOR_EXECUTING_GROUP,
-        ST_EVALUATOR_RUNNING_ACTION,
-        ST_EVALUATOR_SET_WORD_RIGHT_SIDE,
-        ST_EVALUATOR_SET_PATH_RIGHT_SIDE,
-        ST_EVALUATOR_SET_GROUP_RIGHT_SIDE
-    };
-
-    switch (STATE_BYTE(f)) {
-      case ST_EVALUATOR_REEVALUATING:
-        break;
-      case ST_EVALUATOR_EXECUTING_GROUP:
-        STATE_BYTE(f) = 0; goto group_execution_done;
-      case ST_EVALUATOR_RUNNING_ACTION:
-        //
-        // The Action_Executor does not get involved in Lookahead; so you
-        // only get lookahead behavior when an action has been spawned from
-        // a parent frame (such as one evaluating a block, or evaluating an
-        // action's arguments).  Trying to dispatch lookahead from the
-        // Action_Executor causes pain with `null then [x] => [1] else [2]`
-        // cases (for instance).
-        //
-        // However, the evaluation of an invisible can leave a stale value
-        // which indicates a need to invoke another evaluation.  Consider
-        // `do [comment "hi" 10]`.
-        //
-        STATE_BYTE(f) = 0;
-        if (NOT_END(f_next) and GET_CELL_FLAG(f->out, OUT_MARKED_STALE)) {
-            v = Lookback_While_Fetching_Next(f);
-            kind.byte = KIND_BYTE(v);
-            break;
-        }
-        INIT_F_EXECUTOR(f, &Lookahead_Executor);
-        return R_CONTINUATION;
-      case ST_EVALUATOR_SET_WORD_RIGHT_SIDE:
-        STATE_BYTE(f) = 0; goto set_word_with_out;
-      case ST_EVALUATOR_SET_PATH_RIGHT_SIDE:
-        STATE_BYTE(f) = 0; goto set_path_with_out;
-      case ST_EVALUATOR_SET_GROUP_RIGHT_SIDE:
-        STATE_BYTE(f) = 0; goto set_group_with_out;
-      default:
-        assert(false);
-    }
-
-  reevaluate: ;  // meaningful semicolon--subsequent macro may declare things
+  evaluate: ;  // meaningful semicolon--subsequent macro may declare things
 
     // ^-- doesn't advance expression index: `reeval x` starts with `reeval`
+
+    assert(kind.byte == KIND_BYTE_UNCHECKED(v));
 
 //=//// LOOKAHEAD FOR ENFIXED FUNCTIONS THAT QUOTE THEIR LEFT ARG /////////=//
 
@@ -663,13 +651,12 @@ REB_R Reevaluation_Executor(REBFRM *f)
 
       process_set_word:
       case REB_SET_WORD: {
-        if (Was_Rightward_Continuation_Needed(f, v)) {  // see notes
+        if (Was_Rightward_Continuation_Needed(f, v)) {  // may set f_spare
             STATE_BYTE(f) = ST_EVALUATOR_SET_WORD_RIGHT_SIDE;
             return R_CONTINUATION;
         }
 
       set_word_with_out:
-
         if (IS_END(f->out))  // e.g. `do [x: ()]` or `(x: comment "hi")`.
             fail (Error_Need_Non_End_Core(v, f_specifier));
 
@@ -767,7 +754,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
         DECLARE_FRAME_AT_CORE (subframe, v, f_specifier,
             EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END | EVAL_FLAG_KEEP_STALE_BIT
         );
-        INIT_F_EXECUTOR(subframe, &New_Expression_Executor);
+        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
         Push_Frame(f->out, subframe);
 
         // Use Group_Executor() in the *current* frame level, whose feed is
@@ -775,7 +762,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
         // `subframe` (which is a new frame to use a new feed).  Again: that
         // result may be stale, e.g. the f->out we started with.
         //
-        assert(f->executor == &Reevaluation_Executor);
+        assert(f->executor == &Evaluator_Executor);
         STATE_BYTE(f) = ST_EVALUATOR_EXECUTING_GROUP;
 
         return R_CONTINUATION; }
@@ -789,22 +776,25 @@ REB_R Reevaluation_Executor(REBFRM *f)
         if (NOT_END(f->out)) {
             if (NOT_CELL_FLAG(f->out, OUT_MARKED_STALE))
                 CLEAR_CELL_FLAG(f->out, UNEVALUATED);  // `(1)` is evaluative
+            STATE_BYTE(f) = 0;
             INIT_F_EXECUTOR(f, &Lookahead_Executor);
             return f->out;
         }
 
         if (IS_END(F_VALUE(f))) {  // no input to reeval for missing output
             f->out->header.bits &= ~CELL_FLAG_OUT_MARKED_STALE;
+            STATE_BYTE(f) = 0;
             INIT_F_EXECUTOR(f, &Finished_Executor);
             return f->out;  // use END or stale `f->out` (enfix can't pick up)
         }
 
-        // If there's more to try after a vaporized group, retrigger...
+        // If there's more to try after a vaporized group, retrigger
         //
-        assert(f->executor == &Reevaluation_Executor);
+        assert(f_next_gotten == nullptr);  // just ran arbitrary code...
+        gotten = nullptr;  // ...so no need to say `gotten = f_next_gotten;`
         v = Lookback_While_Fetching_Next(f);
         kind.byte = KIND_BYTE(v);
-        goto reevaluate;
+        goto evaluate;
 
 
 //==//// PATH! ///////////////////////////////////////////////////////////==//
@@ -926,13 +916,12 @@ REB_R Reevaluation_Executor(REBFRM *f)
             goto process_set_word;
         }
 
-        if (Was_Rightward_Continuation_Needed(f, v)) {  // see notes
+        if (Was_Rightward_Continuation_Needed(f, v)) {  // may set f_spare
             STATE_BYTE(f) = ST_EVALUATOR_SET_PATH_RIGHT_SIDE;
             return R_CONTINUATION;
         }
 
       set_path_with_out:
-
         if (IS_END(f->out))  // e.g. `do [x: ()]` or `(x: comment "hi")`.
             fail (Error_Need_Non_End_Core(v, f_specifier));
 
@@ -941,7 +930,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
         if (Eval_Path_Throws_Core(
             f_spare,  // output if thrown, used as scratch space otherwise
             nullptr,  // not requesting symbol means refinements not allowed
-            VAL_ARRAY(v),
+            VAL_ARRAY(v),  // Note: `v` may be f_spare--that's okay here
             VAL_INDEX(v),
             Derive_Specifier(f_specifier, v),
             f->out,
@@ -1029,7 +1018,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
         v = f_spare;
         f_next_gotten = nullptr;
 
-        goto reevaluate; }
+        goto evaluate; }
 
 
 //==//// SET-GROUP! //////////////////////////////////////////////////////==//
@@ -1282,7 +1271,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
         v = f_spare;
         kind.byte = KIND_BYTE(v);
 
-        goto reevaluate; }
+        goto evaluate; }
 
 
 //==//////////////////////////////////////////////////////////////////////==//
@@ -1409,6 +1398,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
     */
 
   post_switch:
+    STATE_BYTE(f) = 0;
     INIT_F_EXECUTOR(f, &Lookahead_Executor);
     return R_CONTINUATION;
 
@@ -1418,6 +1408,7 @@ REB_R Reevaluation_Executor(REBFRM *f)
     return R_THROWN;
 
   finished:
+    STATE_BYTE(f) = 0;
     INIT_F_EXECUTOR(f, &Finished_Executor);
     return f->out;
 }
@@ -1691,9 +1682,20 @@ REB_R Lookahead_Executor(REBFRM *f)
     return R_CONTINUATION;
 
   finished:
-    STATE_BYTE(f) = 0;  // !!! Must be 0 for INIT_F_EXECUTOR
+
+    // Want to keep this flag between an operation and an ensuing enfix in
+    // the same frame, so can't clear in Drop_Action(), e.g. due to:
+    //
+    //     left-lit: enfix :lit
+    //     o: make object! [f: does [1]]
+    //     o/f left-lit  ; want error suggesting -> here, need flag for that
+    //
+    CLEAR_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH);
+    assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));  // must be consumed
+
+    STATE_BYTE(f) = 0;
     INIT_F_EXECUTOR(f, &Finished_Executor);
-    return f->out;  // not thrown
+    return f->out;
 }
 
 
