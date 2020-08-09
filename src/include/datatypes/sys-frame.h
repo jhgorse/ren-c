@@ -159,11 +159,7 @@ inline static int FRM_LINE(REBFRM *f) {
 
 inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
 {
-    assert(executor == nullptr or STATE_BYTE(f) == 0);  // nullptr is done
-    if (f->original)
-        assert(executor == &Action_Executor);
-    else
-        assert(executor != &Action_Executor);
+    assert(STATE_BYTE(f) == 0);  // all executors expect INITIAL_ENTRY
     f->executor = executor;
 }
 
@@ -245,12 +241,8 @@ inline static void Conserve_Varlist(REBARR *varlist)
 }
 
 
-// When Push_Action() happens, it sets f->original, but it's guaranteed to be
-// null if an action is not running.  This is tested via a macro because the
-// debug build doesn't do any inlining, and it's called often.
-//
 #define Is_Action_Frame(f) \
-    ((f)->original != nullptr)
+    ((f)->executor == &Action_Executor)
 
 
 // While a function frame is fulfilling its arguments, the `f->param` will
@@ -376,7 +368,7 @@ inline static const char* Frame_Label_Or_Anonymous_UTF8(REBFRM *f) {
 // optimize performance by working with the evaluator directly.
 
 inline static void Free_Frame_Internal(REBFRM *f) {
-    assert(f->original == nullptr);  // Drop_Action() first
+    assert(IS_POINTER_TRASH_DEBUG(f->original));  // Drop_Action() first
 
     // If a frame was interrupted by a fail(), we make allowance that API
     // allocated handles may leak.  Otherwise we mandate that handles have
@@ -497,13 +489,7 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
     }
   #endif
 
-    // Some initialized bit pattern is needed to check to see if a
-    // function call is actually in progress, or if eval_type is just
-    // REB_ACTION but doesn't have valid args/state.  The original action is a
-    // good choice because it is only affected by the function call case,
-    // see Is_Action_Frame_Fulfilling().
-    //
-    f->original = nullptr;
+    TRASH_POINTER_IF_DEBUG(f->original);
 
     TRASH_POINTER_IF_DEBUG(f->opt_label);
   #if defined(DEBUG_FRAME_LABELS)
@@ -706,7 +692,6 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
     Init_Unreadable_Void(&f->spare);
     TRASH_POINTER_IF_DEBUG(f->out);
 
-    f->original = nullptr;  // !!! redundant!
     TRASH_POINTER_IF_DEBUG(f->opt_label);  // !!! apparently not redundant!
     TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // not defaulted
     f->varlist = nullptr;
@@ -771,7 +756,7 @@ inline static void Begin_Action_Core(REBFRM *f, REBSTR *opt_label, bool enfix)
     assert(NOT_EVAL_FLAG(f, RUNNING_ENFIX));
     assert(NOT_FEED_FLAG(f->feed, DEFERRING_ENFIX));
 
-    assert(not f->original);
+    assert(IS_POINTER_TRASH_DEBUG(f->original));
     f->original = FRM_PHASE(f);
 
     INIT_F_EXECUTOR(f, &Action_Executor);  // !!! Review where to do this
@@ -1040,7 +1025,7 @@ inline static void Drop_Action(REBFRM *f)
         // unmanaged varlists hanging around.
     }
 
-    f->original = nullptr; // signal an action is no longer running
+    TRASH_POINTER_IF_DEBUG(f->original);
 
     TRASH_POINTER_IF_DEBUG(f->opt_label);
   #if defined(DEBUG_FRAME_LABELS)

@@ -1556,7 +1556,7 @@ REB_R Parse_Executor(REBFRM *frame_) {
         // rule does not need to be seen by GC (it's either P_SAVE or it is
         // valid from the input rules that are locked).
         //
-        assert(f->original == nullptr);
+        assert(IS_POINTER_TRASH_DEBUG(f->original));
         TRASH_POINTER_IF_DEBUG(P_RULE);
         TRASH_POINTER_IF_DEBUG(P_SUBRULE);
         TRASH_POINTER_IF_DEBUG(P_SET_OR_COPY_WORD);

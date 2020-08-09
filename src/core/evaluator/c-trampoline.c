@@ -45,6 +45,13 @@
 #endif  // ^-- SERIOUSLY: READ ABOUT C-DEBUG-BREAK AND PLACES TICKS ARE STORED
 
 
+enum {
+    ST_CLEANER_RUNNING_THROWN = 88,
+    ST_CLEANER_RUNNING_NORMAL = 101,
+    ST_CLEANER_FINISHED = 255 
+};
+
+
 //
 //  Cleaner_Executor: C
 //
@@ -54,14 +61,9 @@
 //
 REB_R Cleaner_Executor(REBFRM *f)
 {
-    enum {
-        CLEANER_RUNNING_THROWN = 88,
-        CLEANER_RUNNING_NORMAL = 101
-    };
-
     switch (STATE_BYTE(f)) {
-      case CLEANER_RUNNING_THROWN: goto process_next_deferred;
-      case CLEANER_RUNNING_NORMAL: goto process_next_deferred;
+      case ST_CLEANER_RUNNING_THROWN: goto process_next_deferred;
+      case ST_CLEANER_RUNNING_NORMAL: goto process_next_deferred;
       default: assert(false);
     }
 
@@ -89,13 +91,14 @@ REB_R Cleaner_Executor(REBFRM *f)
         return R_CONTINUATION;
     }
 
-    INIT_F_EXECUTOR(f, nullptr);  // Okay, now we're really done
-    if (STATE_BYTE(f) == CLEANER_RUNNING_THROWN) {
+    if (STATE_BYTE(f) == ST_CLEANER_RUNNING_THROWN) {
         Init_Thrown_With_Label(f->out, f->out, DS_TOP);
         DS_DROP();
+        STATE_BYTE(f) = ST_CLEANER_FINISHED;
         return R_THROWN;
     }
-    assert(STATE_BYTE(f) == CLEANER_RUNNING_NORMAL);
+    assert(STATE_BYTE(f) == ST_CLEANER_RUNNING_NORMAL);
+    STATE_BYTE(f) = ST_CLEANER_FINISHED;
     return f->out;  // we should not have changed f->out
   }
 }
@@ -213,11 +216,40 @@ bool Trampoline_Throws(REBFRM *f)
 
   loop:
 
+    REB_R r;
+
+    // Currently we do the signals *before* the executor is called, because
+    // if we did it after then we might see a frame whose handling is to be
+    // dropped...and it may confuse the GC if seen still in the stack.  This
+    // is because frames are identified by their executor, and the executor
+    // is no longer set to null before returning values.
+    //
+    assert(Eval_Count >= 0);
+    if (--Eval_Count == 0) {
+        //
+        // Note that Do_Signals_Throws() may do a recycle step of the GC,
+        // or may spawn an entire interactive debugging session via
+        // breakpoint before it returns.  May also FAIL and longjmp out.
+        //
+        // We can't just test on the `nullptr` case of finishing an executor
+        // result, because that would not provide termination in something
+        // that was deeply tunneling with no resolution.
+        //
+        // The FRM_SPARE() is passed in to be used for the location to write
+        // a throw, but shouldn't be written unless a throw happens...because
+        // the spare cell is in use by the executor.
+        //
+        if (Do_Signals_Throws(FRM_SPARE(f))) {  // see note on FRM_SPARE()
+            Move_Value(f->out, FRM_SPARE(f));
+            r = R_THROWN;
+            goto thrown;
+        }
+    }
+
+
     UPDATE_TICK_DEBUG(f, nullptr);
 
     // v-- This is the TG_Break_At_Tick or C-DEBUG-BREAK landing spot --v
-
-    assert((f->executor == &Action_Executor) == (f->original != nullptr));
 
     // CALL THE EXECUTOR
     //
@@ -225,7 +257,8 @@ bool Trampoline_Throws(REBFRM *f)
     // state, even if just to pass it through.  The executor may push more
     // frames or change the executor of the frame it receives.
     //
-    REB_R r = (f->executor)(f);  // Note: f may not be FS_TOP at this moment
+    
+    r = (f->executor)(f);  // Note: f may not be FS_TOP at this moment
 
     if (r == R_CONTINUATION) {
         //
@@ -305,38 +338,16 @@ bool Trampoline_Throws(REBFRM *f)
         //
         assert(not IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
 
-        if (f->executor != nullptr) {
+        if (f->executor != &Cleaner_Executor) {
             Move_Value(DS_PUSH(), VAL_THROWN_LABEL(f->out));
             CATCH_THROWN(f->out, f->out);
             STATE_BYTE(f) = 0;
             INIT_F_EXECUTOR(f, &Cleaner_Executor);
-            STATE_BYTE(f) = 88;
+            STATE_BYTE(f) = ST_CLEANER_RUNNING_THROWN;
             goto loop;
         }
 
         TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // cleaner finished
-    }
-
-    assert(Eval_Count >= 0);
-    if (--Eval_Count == 0) {
-        //
-        // Note that Do_Signals_Throws() may do a recycle step of the GC,
-        // or may spawn an entire interactive debugging session via
-        // breakpoint before it returns.  May also FAIL and longjmp out.
-        //
-        // We can't just test on the `nullptr` case of finishing an executor
-        // result, because that would not provide termination in something
-        // that was deeply tunneling with no resolution.
-        //
-        // The FRM_SPARE() is passed in to be used for the location to write
-        // a throw, but shouldn't be written unless a throw happens...because
-        // the spare cell is in use by the executor.
-        //
-        if (Do_Signals_Throws(FRM_SPARE(f))) {  // see note on FRM_SPARE()
-            Move_Value(f->out, FRM_SPARE(f));
-            r = R_THROWN;
-            goto thrown;
-        }
     }
 
     if (r == R_CONTINUATION) {

@@ -148,7 +148,7 @@ static void Eval_Core_Shared_Checks_Debug(REBFRM *f) {
     // We only have a label if we are in the middle of running a function,
     // and if we're not running a function then f->original should be null.
     //
-    assert(not f->original);
+    assert(IS_POINTER_TRASH_DEBUG(f->original));
     assert(IS_POINTER_TRASH_DEBUG(f->opt_label));
 
     if (f->varlist) {

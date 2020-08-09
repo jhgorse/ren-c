@@ -130,8 +130,7 @@ void Shutdown_Frame_Stack(void)
     // is freed because it would look like it was a leaked series, but it
     // can't check *after* because the mold buffer balance check would crash.
     //
-    TRASH_POINTER_IF_DEBUG(f->executor);
-    Drop_Frame_Core(f); // can't be Drop_Frame() or Drop_Frame_Unbalanced()
+    Drop_Frame_Core(f);  // can't be Drop_Frame() or Drop_Frame_Unbalanced()
 
     assert(not FS_TOP);
   }

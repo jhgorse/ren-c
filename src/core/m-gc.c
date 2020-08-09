@@ -738,8 +738,7 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
     Queue_Mark_Opt_End_Cell_Deep(&f->feed->fetched);
     Queue_Mark_Opt_End_Cell_Deep(&f->feed->lookback);
 
-    assert(Is_Action_Frame(f) == (f->original != nullptr));
-    if (not f->original) {  // e.g. signals not Is_Action_Frame()
+    if (not Is_Action_Frame(f)) {
         //
         // !!! The only way non-action frames get varlists is the
         // Context_For_Frame_May_Manage() routine, always managed.  But...
