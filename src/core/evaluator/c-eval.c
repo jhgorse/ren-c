@@ -20,32 +20,25 @@
 //
 //=////////////////////////////////////////////////////////////////////////=//
 //
-// This file contains code for the expression evaluator executors on frames.
-// It is responsible for the typical interpretation of a BLOCK! or GROUP! of
-// code being executed, in terms of giving sequences like `x: 1 + 2` a meaning
-// for how SET-WORD! or INTEGER! behaves.  When it encounters something it
-// interprets as a function application, it defers to the action executor
-// found in %c-action.c
+// This file contains code for the `Evaluator_Executor()`.  It is responsible
+// for the typical interpretation of BLOCK! or GROUP!, in terms of giving
+// sequences like `x: 1 + 2` a meaning for how SET-WORD! or INTEGER! behaves.
 //
-// Expression execution is divided into four parts, each of which has its own
-// "Executor" and interacts with the evaluator loop ("Trampoline"):
+// By design the evaluator is not recursive at the C level--it is "stackless".
+// At points where a sub-expression must be evaluated in a new frame, it will
+// heap-allocate that frame and then do a C `return` of R_CONTINUATION.
+// Processing then goes through the "Trampoline" (see %c-trampoline.c), which
+// later re-enters the suspended frame's executor with the result.  Setting
+// the frame's STATE_BYTE() prior to suspension lets it know where to pick up
+// from when it left off.
 //
-//    * New_Expression_Executor()
-//    * One or more Reevaluation_Executor() steps
-//    * Lookahead_Executor()
-//    * Finished_Executor()
-//
-// See comments on each for information about the steps.
+// When it encounters something that needs to be handled as a function
+// application, it defers to %c-action.c for the Action_Executor().  The
+// action gets its own frame.
 //
 //=//// NOTES /////////////////////////////////////////////////////////////=//
 //
-// * See %sys-eval.h for wrappers that make it easier to set up frames and
-//   use the evaluator for a single step.
-//
-// * See %sys-do.h for wrappers that make it easier to run multiple evaluator
-//   steps in a frame and return the final result, giving VOID! by default.
-//
-// * Reevaluation_Executor() is LONG.  That's largely on purpose.  Breaking it
+// * Evaluator_Executor() is LONG.  That's largely on purpose.  Breaking it
 //   into functions would add overhead (in the debug build if not also release
 //   builds) and prevent interesting tricks and optimizations.  It is
 //   separated into sections, and the invariants in each section are made
@@ -94,26 +87,29 @@
 // it is pulled into a local for processing.  These macros shorten + clarify.
 //
 #define f_spare         FRM_SPARE(f)
-#define f_next          f->feed->value  // !!! never nullptr, check in debug?
+#define f_next          f->feed->value
 #define f_next_gotten   f->feed->gotten
 #define f_specifier     f->feed->specifier
 
 
-// SET-WORD!, SET-PATH!, SET-GROUP!, and SET-BLOCK! all want to do roughly
-// the same thing as the first step of their evaluation.  They evaluate the
-// right hand side into f->out.
-//
-// -but- because you can be asked to evaluate something like `x: y: z: ...`,
-// there could be any number of SET-XXX! before the value to assign is found.
-//
-// This inline function attempts to keep that stack by means of the local
-// variable `v`, if it points to a stable location.  If so, it simply reuses
-// the frame it already has.
+// SET-WORD! and SET-PATH! want to do roughly the same thing as the first step
+// of their evaluation.  They evaluate the right hand side into f->out.
 //
 // What makes this slightly complicated is that the current value may be in
 // a place that doing a Fetch_Next_In_Frame() might corrupt it.  This could
 // be accounted for by pushing the value to some other stack--e.g. the data
-// stack.  But for the moment this (uncommon?) case uses a new frame.
+// stack.  That would mean `x: y: z: ...` would only accrue one cell of
+// space for each level instead of one whole frame.
+//
+// But for the moment, a new frame is used each time...and the value is kept
+// safe by putting it into the current frame's `spare` cell.
+//
+// !!! This routine used to be targeted to SET-GROUP! and SET-BLOCK! when it
+// was imagined that they would work in the same way.  However, SET-BLOCK!
+// found a much more interesting application with multiple return values...
+// and SET-GROUP! is likely to be used for something more interesting than
+// `(x): ...` => `set x ...` since that would only save one character and
+// is arguably less coherent.
 //
 inline static bool Was_Rightward_Continuation_Needed(
     REBFRM *f,
@@ -164,49 +160,6 @@ inline static bool Was_Rightward_Continuation_Needed(
 
 
 //
-//  Finished_Executor: C
-//
-// Continuations signal their completion by setting the frame executor to a
-// pointer to this function.  It merely returns `f->out` "as is", and stops
-// the reevaluation process.
-//
-// !!! This is somewhat inefficient and probably calls for some special
-// loophole, but it's not easy to think of what a good place for that loophole
-// would be right now... so this goes ahead and fits into the homogenous
-// continuation model as a passthru option.
-//
-REB_R Finished_Executor(REBFRM *f)
-{
-    // Can't use CLEAR_CELL_FLAG() as this might be END.  Note it can only
-    // be an END if the evaluation started with END (most routines preload
-    // with another value to fall out if it's stale).
-    //
-    if (NOT_EVAL_FLAG(f, KEEP_STALE_BIT))
-        f->out->header.bits &= ~(CELL_FLAG_OUT_MARKED_STALE);
-
-    if (GET_EVAL_FLAG(f, TO_END)) {
-        if (NOT_END(f->feed->value))
-            INIT_F_EXECUTOR(f, &Evaluator_Executor);
-        else {
-            STATE_BYTE(f) = 0;
-            INIT_F_EXECUTOR(f, &Cleaner_Executor);
-            STATE_BYTE(f) = 101;
-        }
-    }
-    else if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE)) {
-        INIT_F_EXECUTOR(f, nullptr);  // owner must take care of cleaner
-    }
-    else {
-        STATE_BYTE(f) = 0;
-        INIT_F_EXECUTOR(f, &Cleaner_Executor);
-        STATE_BYTE(f) = 101;
-    }
-    return f->out;
-}
-
-
-
-//
 //  Evaluator_Executor: C
 //
 // Try and encapsulate the main frame work but without actually looping.
@@ -219,6 +172,15 @@ REB_R Finished_Executor(REBFRM *f)
 // (such as the left-hand side of an enfix operation).  However, the value
 // can fall through as the final output, as the flag is cleared in the
 // Finished_Executor().
+//
+// Expression execution can be thought of as having four distinct states:
+//
+//    * new_expression
+//    * evaluate
+//    * lookahead
+//    * finished -or- threw
+//
+// It is possible to preload states and start an evaluator at any of these.
 //
 REB_R Evaluator_Executor(REBFRM *f)
 {
@@ -731,9 +693,7 @@ REB_R Evaluator_Executor(REBFRM *f)
 
         if (IS_END(f_next)) {  // no input to reeval for missing output
             f->out->header.bits &= ~CELL_FLAG_OUT_MARKED_STALE;
-            STATE_BYTE(f) = 0;
-            INIT_F_EXECUTOR(f, &Finished_Executor);
-            return f->out;  // use END or stale `f->out` (enfix can't pick up)
+            goto finished;
         }
 
         // If there's more to try after a vaporized group, retrigger
@@ -1617,9 +1577,20 @@ REB_R Evaluator_Executor(REBFRM *f)
     CLEAR_EVAL_FLAG(f, DIDNT_LEFT_QUOTE_PATH);
     assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));  // must be consumed
 
+    if (GET_EVAL_FLAG(f, TO_END) and NOT_END(f->feed->value)) {
+        //
+        // Usually the Trampoline handles this, but if we don't return to the
+        // trampoline then it can't do so.
+        //
+        assert(NOT_END(f->out));
+        if (NOT_EVAL_FLAG(f, KEEP_STALE_BIT))
+            f->out->header.bits &= ~(CELL_FLAG_OUT_MARKED_STALE);
+
+        goto new_expression;
+    }
+
     STATE_BYTE(f) = 0;
-    INIT_F_EXECUTOR(f, &Finished_Executor);
-    return f->out;
+    return f->out;  // Trampoline will take care of stale bit
 }
 
 

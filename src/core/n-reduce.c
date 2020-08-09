@@ -108,7 +108,7 @@ REBNATIVE(reduce)
 
     REBFRM *f = FS_TOP;
     assert(f->prior == frame_);  // review this guarantee
-    assert(f->executor == nullptr);  // step should have completed
+    assert(IS_POINTER_TRASH_DEBUG(f->executor));  // step should've completed
     assert(GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // flag is not cleared
 
     if (IS_END(D_OUT)) {  // e.g. `reduce []` or `reduce [comment "hi"]`
@@ -243,7 +243,6 @@ REB_R Composer_Executor(REBFRM *f) {
   push_current: {
     if (IS_END(F_VALUE(f))) {
         Init_Logic(D_OUT, GET_CELL_FLAG(D_SPARE, SPARE_MARKED_CHANGED));
-        INIT_F_EXECUTOR(f, nullptr);
         return D_OUT;  // TRUE if accumulated modifications, FALSE if not
     }
 

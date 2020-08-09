@@ -133,7 +133,7 @@ REB_R Encloser_Dispatcher(REBFRM *f)
     // it from garbage collection.  However, Push_Continuation will make a
     // copy of the "with" argument into the function's frame, so it's safe.
     //
-    Push_Continuation_With_Core(
+    Pushed_Continuation_With_Core(
         f->out,
         f,
         EVAL_FLAG_DELEGATE_CONTROL,

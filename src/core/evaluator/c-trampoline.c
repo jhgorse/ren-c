@@ -102,6 +102,24 @@ REB_R Cleaner_Executor(REBFRM *f)
 
 
 //
+//  Just_Use_Out_Executor: C
+//
+// This is a simplistic executor that can be used in cases that hold frames
+// alive on the stack and want to be bypassed, or if it's easier to push a
+// "no-op" frame than to special-case handling of not pushing a frame.
+//
+// Note: The branch continuations consider the "no frame necessary for
+// QUOTED!s or BLANK!s to be worth it to special-case, vs. pushing this.
+//
+REB_R Just_Use_Out_Executor(REBFRM *f)
+{
+    if (Is_Throwing(f))
+        return R_THROWN;
+    return f->out;
+}
+
+
+//
 //  Trampoline_Throws: C
 //
 // !!! The end goal is that this function is never found recursively on a
@@ -298,8 +316,6 @@ bool Trampoline_Throws(REBFRM *f)
 
         TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // cleaner finished
     }
-    else
-        assert((f->executor == &Action_Executor) == (f->original != nullptr));
 
     assert(Eval_Count >= 0);
     if (--Eval_Count == 0) {
@@ -328,8 +344,25 @@ bool Trampoline_Throws(REBFRM *f)
         goto loop;  // keep going
     }
 
-    if (f->executor == nullptr) {  // no further execution for frame, drop it
-        assert(r == f->out);
+    if (r == f->out) {  // no further execution for frame, drop it
+
+        // !!! This is going to be the right place to handle other variants of
+        // return values consistently, e.g. API handles.  The return results
+        // from native dispatchers may be specific to interactions.
+
+        #if !defined(NDEBUG)
+        //assert(NOT_EVAL_FLAG(f, DOING_PICKUPS));
+        //assert(
+        //    (f->flags.bits & ~EVAL_FLAG_TOOK_HOLD) == F->initial_flags
+        //);  // changes should be restored, va_list reification may take hold
+        #endif
+
+        TRASH_POINTER_IF_DEBUG(f->executor);
+
+        assert(IS_SPECIFIC(cast(RELVAL*, f->out)));
+
+        if (NOT_EVAL_FLAG(f, KEEP_STALE_BIT))
+            f->out->header.bits &= ~(CELL_FLAG_OUT_MARKED_STALE);
 
         // !!! Currently we do not drop the topmost frame, because some code
         // (e.g. MATCH) would ask for a frame to be filled, and then steal
@@ -381,12 +414,12 @@ bool Trampoline_Throws(REBFRM *f)
         // means that when those executors run, their frame parameter is
         // not the technical top of the stack.
         //
-        REBFRM *prior = f->prior;
         if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE)) {
-            f = prior;
+            f = f->prior;
             assert(f != FS_TOP);  // sanity check (*not* the top of stack)
         }
         else {
+            REBFRM *prior = f->prior;
             Drop_Frame(f);
             f = prior;
             assert(f == FS_TOP);  // sanity check (is the top of the stack)
@@ -399,88 +432,65 @@ bool Trampoline_Throws(REBFRM *f)
         Eval_Core_Exit_Checks_Debug(f);   // called unless a fail() longjmps
   #endif
 
-    if (r == R_THROWN) {
-      thrown:
-        if (GET_EVAL_FLAG(f, ROOT_FRAME)) {
-            if (PG_Tasks and f == PG_Tasks->go_frame) {
+    assert(r == R_THROWN);
+
+  thrown:
+    if (GET_EVAL_FLAG(f, ROOT_FRAME)) {
+        if (PG_Tasks and f == PG_Tasks->go_frame) {
+            //
+            // !!! When you get an uncaught throw or failure and it is in
+            // a goroutine, that goroutine has to stop and signal its
+            // error somehow.
+            //
+            // In terms of raising errors on the main thread, it's kind of
+            // like a Ctrl-C fabricating an error on any innocuous
+            // statement you might have--if the scheduler were allowed to
+            // run at any minute.  But right now, the only time it will
+            // happen is when the main thread is in a block on a SEND-CHAN
+            // or RECEIVE-CHAN.  Rethink.
+            //
+            REBCTX *error = Error_No_Catch_For_Throw(f->out);
+            Abort_Frame(f);
+
+            REBTSK *failed_task = PG_Tasks;
+            Circularly_Unlink_Task(failed_task);
+
+            if (NOT_END(&failed_task->channel)) {
                 //
-                // !!! When you get an uncaught throw or failure and it is in
-                // a goroutine, that goroutine has to stop and signal its
-                // error somehow.
+                // !!! We have to be careful here, because we're in the
+                // trampoline...so we can't call SEND-CHAN.
                 //
-                // In terms of raising errors on the main thread, it's kind of
-                // like a Ctrl-C fabricating an error on any innocuous
-                // statement you might have--if the scheduler were allowed to
-                // run at any minute.  But right now, the only time it will
-                // happen is when the main thread is in a block on a SEND-CHAN
-                // or RECEIVE-CHAN.  Rethink.
-                //
-                REBCTX *error = Error_No_Catch_For_Throw(f->out);
-                Abort_Frame(f);
-
-                REBTSK *failed_task = PG_Tasks;
-                Circularly_Unlink_Task(failed_task);
-
-                if (NOT_END(&failed_task->channel)) {
-                    //
-                    // !!! We have to be careful here, because we're in the
-                    // trampoline...so we can't call SEND-CHAN.
-                    //
-                    REBCTX *ctx = VAL_CONTEXT(&failed_task->channel);
-                    REBLEN n = Find_Canon_In_Context(
-                        ctx,
-                        Canon(SYM_BUFFER),
-                        true   // !!! "always"?
-                    );
-                    REBVAL *buffer = CTX_VAR(ctx, n);
-                    Append_Value(VAL_ARRAY(buffer), CTX_ARCHETYPE(error));
-                    error = nullptr;
-                }
-
-                FREE(REBTSK, failed_task);
-
-                if (error)
-                    fail (error);
-
-                f = FS_TOP;
-                goto loop;
+                REBCTX *ctx = VAL_CONTEXT(&failed_task->channel);
+                REBLEN n = Find_Canon_In_Context(
+                    ctx,
+                    Canon(SYM_BUFFER),
+                    true   // !!! "always"?
+                );
+                REBVAL *buffer = CTX_VAR(ctx, n);
+                Append_Value(VAL_ARRAY(buffer), CTX_ARCHETYPE(error));
+                error = nullptr;
             }
 
-            assert(NOT_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // always kept
-            DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
-            return true;
+            FREE(REBTSK, failed_task);
+
+            if (error)
+                fail (error);
+
+            f = FS_TOP;
+            goto loop;
         }
 
-        if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE))
-            f = f->prior;
-        else {
-            Abort_Frame(f);
-            f = FS_TOP;  // refresh
-        }
+        assert(NOT_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // always kept
+        DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
+        return true;
     }
+
+    if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE))
+        f = f->prior;
     else {
-        // !!! This is going to be the right place to handle other variants of
-        // return values consistently, e.g. API handles.  The return results
-        // from native dispatchers may be specific to interactions.
+        Abort_Frame(f);
+        f = FS_TOP;  // refresh
 
-        assert(r == f->out);
-        assert(IS_SPECIFIC(cast(RELVAL*, f->out)));
-
-        #if !defined(NDEBUG)
-        //assert(NOT_EVAL_FLAG(f, DOING_PICKUPS));
-        //assert(
-        //    (f->flags.bits & ~EVAL_FLAG_TOOK_HOLD) == F->initial_flags
-        //);  // changes should be restored, va_list reification may take hold
-        #endif
-
-        // We now are at the frame above the one that made the last
-        // request.  What we need to know is if it wanted to do any
-        // post-processing of the f->out that was resolved, or if it
-        // is happy to take the result "as is"
-        //
-        // As it stands, the Action_Dispatcher always wants a chance to
-        // follow up... even if just to Drop the action.  Whether it
-        // calls the dispatcher or not again depends on DELEGATES_DISPATCH
     }
 
     goto loop;

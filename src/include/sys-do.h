@@ -188,7 +188,7 @@ inline static bool Do_Branch_Core_Throws(
     // invokes the trampoline directly with the same continuation code used
     // by stackless IF, CASE, DEFAULT, etc. on branches.
     //
-    REBFRM *f = Push_Continuation_With_Core(
+    REBFRM *f = Pushed_Continuation_With_Core(
         out,
         FS_TOP,  // should not be touched
         0,  // no flags (hence passed in frame ignored)
@@ -196,6 +196,9 @@ inline static bool Do_Branch_Core_Throws(
         SPECIFIED,
         condition
     );
+    if (not f)  // out could be set with no continuation
+        return false;
+
     SET_EVAL_FLAG(f, ROOT_FRAME);
     bool threw = (*PG_Trampoline_Throws)(f);
     if (threw)

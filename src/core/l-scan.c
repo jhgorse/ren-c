@@ -2548,7 +2548,6 @@ REB_R Scanner_Executor(REBFRM *f) {
 
     // Note: ss->newline_pending may be true; used for ARRAY_NEWLINE_AT_TAIL
 
-    INIT_F_EXECUTOR(f, nullptr);
     return Init_Nulled(f->out);  // for rebRescue(), has to return a REBVAL*
 
   syntax_error:

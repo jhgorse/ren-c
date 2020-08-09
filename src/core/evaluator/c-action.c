@@ -1340,8 +1340,7 @@ REB_R Action_Executor(REBFRM *f)
         //
         assert(NOT_EVAL_FLAG(f, FULFILL_ONLY));
         Drop_Action(f);
-        INIT_F_EXECUTOR(f, &Finished_Executor);
-        return R_CONTINUATION; }
+        return f->out; }
 
       default:
         assert(!"Invalid pseudotype returned from action dispatcher");
@@ -1476,7 +1475,6 @@ REB_R Action_Executor(REBFRM *f)
     //     1 + (comment "hi") 2 * 3   ; check this is 9 while you're at it
     //     1 (comment "hi") + 2       ; ...and make sure this one fails!
     //
-    INIT_F_EXECUTOR(f, &Finished_Executor);
     return f->out;
   }
 

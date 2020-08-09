@@ -505,7 +505,7 @@ bool Eval_Path_Throws_Core(
         *label_out = pvs->opt_label;
 
     assert(not Is_Throwing(pvs));
-    INIT_F_EXECUTOR(pvs, nullptr);  // !!! new rule for drop frame
+    TRASH_POINTER_IF_DEBUG(pvs->executor);  // !!! new rule for drop frame
     Drop_Frame_Unbalanced(pvs);  // refinements may accrue on stack
     return false; // not thrown
 
@@ -675,7 +675,7 @@ REBNATIVE(pick)
         panic ("Unsupported return value in Path Dispatcher");
     }
 
-    INIT_F_EXECUTOR(pvs, nullptr);
+    TRASH_POINTER_IF_DEBUG(pvs->executor);
     Drop_Frame(pvs);
     return r;
 }
@@ -749,7 +749,7 @@ REBNATIVE(poke)
         fail (PVS_PICKER(pvs));  // raise error in release build
     }
 
-    INIT_F_EXECUTOR(pvs, nullptr);
+    TRASH_POINTER_IF_DEBUG(pvs->executor);
     Drop_Frame(pvs);
 
     RETURN (ARG(value)); // return the value we got in

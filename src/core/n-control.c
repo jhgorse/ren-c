@@ -57,41 +57,81 @@
 //    one
 //    == 5
 //
-REB_R Brancher_Executor(REBFRM *frame_)
+REB_R Brancher_Executor(REBFRM *f)
 {
-    if (IS_GROUP(D_SPARE) or IS_SYM_GROUP(D_SPARE)) {
-        mutable_KIND_BYTE(D_SPARE) = mutable_MIRROR_BYTE(D_SPARE) = REB_BLOCK;
-        STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is initial_entry
-        CONTINUE (D_SPARE);
+    if (Is_Throwing(f))
+        return R_THROWN;
+
+    enum {
+        ST_BRANCHER_INITIAL_ENTRY = 0,
+        ST_BRANCHER_PREPROCESSING_BRANCH,
+        ST_BRANCHER_EVALUATING_BRANCH
+    };
+
+    switch (STATE_BYTE(f)) {
+      case ST_BRANCHER_INITIAL_ENTRY: goto preprocess_branch;
+      case ST_BRANCHER_PREPROCESSING_BRANCH: goto evaluate_branch;
+      case ST_BRANCHER_EVALUATING_BRANCH: return f->out;
+      default: assert(false);
     }
 
-    assert(IS_BLOCK(D_SPARE));
+  preprocess_branch: {
+    if (IS_GROUP(FRM_SPARE(f)) or IS_SYM_GROUP(FRM_SPARE(f))) {
+        mutable_KIND_BYTE(FRM_SPARE(f))
+            = mutable_MIRROR_BYTE(FRM_SPARE(f)) = REB_BLOCK;
+
+        STATE_BYTE(f) = ST_BRANCHER_PREPROCESSING_BRANCH;
+        Pushed_Continuation_With_Core(
+            f->out,
+            f,
+            0,
+            FRM_SPARE(f),
+            SPECIFIED,
+            END_NODE
+        );
+        return R_CONTINUATION;
+    }
+
+    goto evaluate_branch;
+  }
+
+  evaluate_branch: {
+    assert(IS_BLOCK(FRM_SPARE(f)));
 
     if (not (  // ... any of the legal branch types
-        IS_BLOCK(D_OUT)
-        or IS_QUOTED(D_OUT)
-        or IS_SYM_WORD(D_OUT)
-        or IS_SYM_PATH(D_OUT)
-        or IS_SYM_GROUP(D_OUT)
-        or IS_BLANK(D_OUT)
+        IS_BLOCK(f->out)
+        or IS_QUOTED(f->out)
+        or IS_SYM_WORD(f->out)
+        or IS_SYM_PATH(f->out)
+        or IS_SYM_GROUP(f->out)
+        or IS_BLANK(f->out)
     )){
         fail ("Invalid branch type produced by SYM-GROUP! redone branch");
     }
 
-    Move_Value(D_SPARE, D_OUT);
+    Move_Value(FRM_SPARE(f), f->out);
+
+    if (IS_SYM_GROUP(FRM_SPARE(f)))
+        goto preprocess_branch;  // !!! Allow infinite SYM-GROUP! recursion?
 
     // !!! The current intent of "delegate" only works for dispatchers that
     // coordinate with Action_Executor(), because the executor still gets
     // called in order to finalize.  The emerging concept of an executor
     // that signals not wanting to be called back with nullptr is that it
     // does not heed the delegation flag used for that purpose.  This is a
-    // work in progress.  We can't say nullptr since we're returning a
-    // continuation, so use the Finished_Executor().
+    // work in progress.
     //
-    STATE_BYTE(frame_) = 0;  // !!! Hack to pass INIT_F_EXECUTOR() check
-    INIT_F_EXECUTOR(frame_, &Finished_Executor);
-    STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is initial_entry
-    CONTINUE (D_SPARE);
+    STATE_BYTE(f) = ST_BRANCHER_EVALUATING_BRANCH;
+    Pushed_Continuation_With_Core(
+        f->out,
+        f,
+        0,
+        FRM_SPARE(f),
+        SPECIFIED,
+        END_NODE
+    );
+    return R_CONTINUATION;
+  }
 }
 
 
@@ -1031,7 +1071,7 @@ REBNATIVE(case)
 
     f = FS_TOP;
     assert(f->prior == frame_);  // !!! review this guaranteee
-    assert(f->executor == nullptr);
+    assert(IS_POINTER_TRASH_DEBUG(f->executor));
 
     switch (D_STATE_BYTE) {
       case ST_CASE_EVALUATING_CONDITION: goto condition_was_evaluated;
@@ -1154,14 +1194,13 @@ REBNATIVE(case)
 
     // !!! The `f` frame is on top, holding state for the enumeration.  We are
     // going to push another frame which will need its own enumeration state.
-    // When that is finished we will want the "Finished_Executor".  This
-    // may be the correct interpretation of `nullptr` on dispatch, and instead
-    // of crashing or erroring the frame that's just there would stay there.
     //
-    INIT_F_EXECUTOR(f, &Finished_Executor);
+    assert(IS_POINTER_TRASH_DEBUG(f->executor));
+    STATE_BYTE(f) = 0;
+    INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
     STATE_BYTE(f) = 1;  // !!! Currently can't leave a 0 byte w/push below
 
-    Push_Continuation_With_Core(
+    REBFRM *subframe = Pushed_Continuation_With_Core(
         D_OUT,
         f,
         0,  // don't delegate, don't catch throws
@@ -1169,8 +1208,11 @@ REBNATIVE(case)
         F_SPECIFIER(f),  // branch_specifier
         END_NODE  // with
     );
-    D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
-    return R_CONTINUATION;
+    if (subframe) {
+        D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
+        return R_CONTINUATION;
+    }
+    goto branch_was_evaluated;
   }
 
   branch_was_evaluated: {

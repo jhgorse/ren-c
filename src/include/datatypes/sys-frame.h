@@ -648,13 +648,9 @@ inline static void Drop_Frame_Core(REBFRM *f) {
         f->took_hold = false;  // needed?
     }
 
-    // Successful completion of a frame's executor ends with `nullptr`, while
-    // ending returning a throw or cooperative error makes trash.
+    // Whether thrown or completed, the executor should be trashed in debug.
     //
-    assert(
-        f->executor == nullptr
-        or IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor)
-    );
+    assert(IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
 
     assert(TG_Top_Frame == f);
     TG_Top_Frame = f->prior;
@@ -1132,7 +1128,7 @@ inline static REBVAL *D_ARG_Core(REBFRM *f, REBLEN n) {  // 1 for first arg
 // continuation finishes, and its f->out pointer will contain whatever was
 // produced.
 //
-inline static REBFRM *Push_Continuation_With_Core(
+inline static REBFRM *Pushed_Continuation_With_Core(
     REBVAL *out,
     REBFRM *f,
     REBFLGS flags,  // EVAL_FLAG_(DELEGATE_CONTROL/DISPATCHER_CATCHES)
@@ -1356,16 +1352,12 @@ inline static REBFRM *Push_Continuation_With_Core(
         fail ("Bad branch type");
     }
 
-  just_use_out: {
-    DECLARE_END_FRAME (subframe, EVAL_MASK_DEFAULT);
-    INIT_F_EXECUTOR(subframe, &Finished_Executor);
-    Push_Frame(f->out, subframe);
-    return subframe;
-  }
+  just_use_out:
+    return nullptr;
 }
 
 #define Push_Continuation_With(out,f,flags,branch,with) \
-    Push_Continuation_With_Core( \
+    Pushed_Continuation_With_Core( \
         (out), /* Note: repeat macro arg `f` as (f)->out would be bad! */ \
         (f), \
         (flags), \
@@ -1380,46 +1372,54 @@ inline static REBFRM *Push_Continuation_With_Core(
 //
 #define DELEGATE(branch) \
     do { \
-        Push_Continuation_With(frame_->out, \
-            frame_, EVAL_FLAG_DELEGATE_CONTROL, (branch), END_NODE); \
+        if (not Push_Continuation_With(frame_->out, \
+                frame_, EVAL_FLAG_DELEGATE_CONTROL, (branch), END_NODE)) \
+            return frame_->out; \
         STATE_BYTE(frame_) = 1;  /* STATE_BYTE() = 0 means initial_entry */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define DELEGATE_WITH(branch,with) \
     do { \
-        Push_Continuation_With(frame_->out, \
-            frame_, EVAL_FLAG_DELEGATE_CONTROL, (branch), (with)); \
+        if (not Push_Continuation_With(frame_->out, \
+                frame_, EVAL_FLAG_DELEGATE_CONTROL, (branch), (with))) \
+            return frame_->out; \
         STATE_BYTE(frame_) = 1;  /* STATE_BYTE() = 0 means initial_entry */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define CONTINUE(branch) \
     do { \
-        Push_Continuation_With(frame_->out, frame_, 0, (branch), END_NODE); \
+        if (not Push_Continuation_With(frame_->out, \
+                frame_, 0, (branch), END_NODE)) \
+            return frame_->out; \
         assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define CONTINUE_WITH(branch,with) \
     do { \
-        Push_Continuation_With(frame_->out, frame_, 0, (branch), (with)); \
+        if (not Push_Continuation_With(frame_->out, \
+                frame_, 0, (branch), (with))) \
+            return frame_->out; \
         assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define CONTINUE_CATCHABLE(branch) \
     do { \
-        Push_Continuation_With(frame_->out, \
-            frame_, EVAL_FLAG_DISPATCHER_CATCHES, (branch), END_NODE); \
+        if (not Push_Continuation_With(frame_->out, \
+                frame_, EVAL_FLAG_DISPATCHER_CATCHES, (branch), END_NODE)) \
+            return frame_->out; \
         assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
 
 #define CONTINUE_WITH_CATCHABLE(branch,with) \
     do { \
-        Push_Continuation_With(frame_->out, \
-            frame_, EVAL_FLAG_DISPATCHER_CATCHES, (branch), (with)); \
+        if (not Push_Continuation_With(frame_->out, \
+                frame_, EVAL_FLAG_DISPATCHER_CATCHES, (branch), (with))) \
+            return frame_->out; \
         assert(STATE_BYTE(frame_) != 0);  /* must set to nonzero */ \
         return R_CONTINUATION; \
     } while (0)
@@ -1462,7 +1462,7 @@ inline static REBFRM *Push_Continuation_Details_0_Core(
     // paramlist but do not have an instance of an action to line them up
     // with.  We use the frame (identified by varlist) as the "specifier".
     //
-    return Push_Continuation_With_Core(
+    REBFRM *subframe = Pushed_Continuation_With_Core(
         out,
         f,
         flags,
@@ -1470,6 +1470,8 @@ inline static REBFRM *Push_Continuation_Details_0_Core(
         SPC(f->varlist),
         END_NODE
     );
+    assert(subframe);  // Always should require a push for a BLOCK!
+    return subframe;
 }
 
 #define Push_Continuation_Details_0(out,f) \

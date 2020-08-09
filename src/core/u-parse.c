@@ -2930,23 +2930,17 @@ REB_R Parse_Executor(REBFRM *frame_) {
     Init_Unreadable_Void(P_COUNT_VALUE);
     TRASH_POINTER_IF_DEBUG(P_SUBRULE);
 
-    // Note we can't use Finished_Executor() here as written, because if we
-    // are in the TO_END mode that goes back to New_Expression_Evaluator().
-    //
-    assert(f->executor == &Parse_Executor);
     D_STATE_BYTE = ST_PARSE_PRE_RULE;
     Init_Nulled(P_OUT);  // get called back with NULL (!!! should it be null?)
     return R_CONTINUATION;
 
   return_position:
-    INIT_F_EXECUTOR(f, nullptr);
     return Init_Integer(P_OUT, P_POS); // !!! return switched input series??
 
   return_null:
     if (not IS_BLANK(P_COLLECTION_VALUE))  // failed so drop COLLECT additions
       TERM_ARRAY_LEN(VAL_ARRAY(P_COLLECTION_VALUE), collection_tail);
 
-    INIT_F_EXECUTOR(f, nullptr);
     return Init_Nulled(P_OUT);
 
   return_thrown:
