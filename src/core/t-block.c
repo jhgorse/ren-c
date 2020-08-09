@@ -233,7 +233,7 @@ REB_R MAKE_Array(
             REBFRM *param_frame = CTX_FRAME_MAY_FAIL(context);
 
             REBVAL *param = SPECIFIC(
-                ARR_HEAD(ACT_PARAMLIST(FRM_PHASE(param_frame)))
+                ARR_HEAD(ACT_PARAMLIST(F_PHASE(param_frame)))
             );
             if (VAL_VARARGS_SIGNED_PARAM_INDEX(arg) < 0)
                 param += - VAL_VARARGS_SIGNED_PARAM_INDEX(arg);

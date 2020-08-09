@@ -77,10 +77,10 @@ REB_R Cleaner_Executor(REBFRM *f)
         if (NOT_ARRAY_FLAG(a, DEFERRED_CODE))
             continue;
 
-        REBVAL *code = KNOWN(ARR_SINGLE(a));
+        REBVAL *code = SPECIFIC(ARR_SINGLE(a));
 
         Push_Continuation_With(
-            FRM_SPARE(f),  // !!! Making non f->out legal output is WIP
+            F_SPARE(f),  // !!! Making non f->out legal output is WIP
             f,
             EVAL_FLAG_DISPATCHER_CATCHES,
             code,  // gets copied to new frame so freeing is not a problem
@@ -235,12 +235,12 @@ bool Trampoline_Throws(REBFRM *f)
         // result, because that would not provide termination in something
         // that was deeply tunneling with no resolution.
         //
-        // The FRM_SPARE() is passed in to be used for the location to write
+        // The F_SPARE() is passed in to be used for the location to write
         // a throw, but shouldn't be written unless a throw happens...because
         // the spare cell is in use by the executor.
         //
-        if (Do_Signals_Throws(FRM_SPARE(f))) {  // see note on FRM_SPARE()
-            Move_Value(f->out, FRM_SPARE(f));
+        if (Do_Signals_Throws(F_SPARE(f))) {  // see note on F_SPARE()
+            Move_Value(f->out, F_SPARE(f));
             r = R_THROWN;
             goto thrown;
         }
@@ -278,7 +278,7 @@ bool Trampoline_Throws(REBFRM *f)
         assert(
             f == FS_TOP
             or STATE_BYTE(f) != 0
-            or (Is_Action_Frame(f) and FRM_PHASE(f) == NATIVE_ACT(yield))
+            or (Is_Action_Frame(f) and F_PHASE(f) == NATIVE_ACT(yield))
         );
     }
 
@@ -310,7 +310,7 @@ bool Trampoline_Throws(REBFRM *f)
             // Main is running and there are tasks.  Go ahead and start up
             // the first one available (last one to execute).
             //
-            Replug_Stack(PG_Tasks->plug_frame, f, KNOWN(&PG_Tasks->plug));
+            Replug_Stack(PG_Tasks->plug_frame, f, SPECIFIC(&PG_Tasks->plug));
             assert(IS_TRASH_DEBUG(&PG_Tasks->plug));
             PG_Tasks->plug_frame = nullptr;
 
@@ -439,7 +439,7 @@ bool Trampoline_Throws(REBFRM *f)
     }
 
   #if !defined(NDEBUG)
-    if (not f->original)
+    if (not f_original)
         Eval_Core_Exit_Checks_Debug(f);   // called unless a fail() longjmps
   #endif
 
@@ -550,7 +550,7 @@ REBNATIVE(go)
         Push_Action(f, VAL_ACTION(source), VAL_BINDING(source));
         REBSTR *opt_label = nullptr;
         Begin_Prefix_Action(f, opt_label);
-        f->param = END_NODE;
+        f_param = END_NODE;
     }
     else {
         assert(IS_BLOCK(source));

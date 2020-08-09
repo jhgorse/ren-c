@@ -51,7 +51,7 @@ enum {
 
 REB_R Downshot_Dispatcher(REBFRM *f)  // runs until count is reached
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_ONESHOT_MAX);
 
     RELVAL *n = ARR_AT(details, IDX_ONESHOT_COUNTER);
@@ -59,7 +59,7 @@ REB_R Downshot_Dispatcher(REBFRM *f)  // runs until count is reached
         return nullptr;  // always return null once 0 is reached
     --VAL_INT64(n);
 
-    REBVAL *code = FRM_ARG(f, 1);
+    REBVAL *code = F_ARG_N(f, 1);
     if (Do_Branch_Throws(f->out, code))
         return R_THROWN;
 
@@ -69,7 +69,7 @@ REB_R Downshot_Dispatcher(REBFRM *f)  // runs until count is reached
 
 REB_R Upshot_Dispatcher(REBFRM *f)  // won't run until count is reached
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_ONESHOT_MAX);
 
     RELVAL *n = ARR_AT(details, IDX_ONESHOT_COUNTER);
@@ -78,7 +78,7 @@ REB_R Upshot_Dispatcher(REBFRM *f)  // won't run until count is reached
         return nullptr;  // return null until 0 is reached
     }
 
-    REBVAL *code = FRM_ARG(f, 1);
+    REBVAL *code = F_ARG_N(f, 1);
     if (Do_Branch_Throws(f->out, code))
         return R_THROWN;
 

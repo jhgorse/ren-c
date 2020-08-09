@@ -44,7 +44,7 @@ REB_R Path_Executor(REBFRM *f)
     if (f->out != f->prior->out)
         Move_Value(f->prior->out, f->out);
 
-    TRASH_POINTER_IF_DEBUG(f->opt_label);  // !!! an assert checks--review
+    TRASH_POINTER_IF_DEBUG(f_opt_label);  // !!! an assert checks--review
     return R_THROWN;
 }
 
@@ -218,7 +218,7 @@ bool Next_Path_Throws(REBPVS *pvs)
             //
             fail ("Path evaluation produced temporary value, can't POKE it");
         }
-        TRASH_POINTER_IF_DEBUG(pvs->special);
+        TRASH_POINTER_IF_DEBUG(PVS_OPT_SETVAL(pvs));
     }
     else {
         pvs->u.ref.cell = nullptr; // clear status of the reference
@@ -292,8 +292,8 @@ bool Next_Path_Throws(REBPVS *pvs)
     // capture the last refinement's name, so check label for non-NULL.
     //
     if (IS_ACTION(pvs->out) and IS_WORD(PVS_PICKER(pvs))) {
-        if (not pvs->opt_label)
-            pvs->opt_label = VAL_WORD_SPELLING(PVS_PICKER(pvs));
+        if (not PVS_OPT_LABEL(pvs))
+            PVS_OPT_LABEL(pvs) = VAL_WORD_SPELLING(PVS_PICKER(pvs));
     }
 
     if (IS_END(*v))
@@ -365,10 +365,8 @@ bool Eval_Path_Throws_Core(
     );
     assert(out != opt_setval and out != PVS_PICKER(pvs));
 
-    pvs->special = opt_setval; // a.k.a. PVS_OPT_SETVAL()
-    assert(PVS_OPT_SETVAL(pvs) == opt_setval);
-
-    pvs->opt_label = NULL;
+    PVS_OPT_SETVAL(pvs) = opt_setval;
+    PVS_OPT_LABEL(pvs) = nullptr;
 
     // Seed the path evaluation process by looking up the first item (to
     // get a datatype to dispatch on for the later path items)
@@ -383,7 +381,7 @@ bool Eval_Path_Throws_Core(
         Move_Value(pvs->out, SPECIFIC(pvs->u.ref.cell));
 
         if (IS_ACTION(pvs->out))
-            pvs->opt_label = VAL_WORD_SPELLING(*v);
+            PVS_OPT_LABEL(pvs) = VAL_WORD_SPELLING(*v);
     }
     else if (
         IS_GROUP(*v)
@@ -489,9 +487,9 @@ bool Eval_Path_Throws_Core(
             if (Specialize_Action_Throws(
                 PVS_PICKER(pvs),
                 pvs->out,
-                pvs->opt_label,
-                NULL, // opt_def
-                dsp_orig // first_refine_dsp
+                PVS_OPT_LABEL(pvs),
+                nullptr,  // opt_def
+                dsp_orig  // first_refine_dsp
             )){
                 panic ("REFINE-only specializations should not THROW");
             }
@@ -502,7 +500,7 @@ bool Eval_Path_Throws_Core(
 
   return_not_thrown:
     if (label_out)
-        *label_out = pvs->opt_label;
+        *label_out = PVS_OPT_LABEL(pvs);
 
     assert(not Is_Throwing(pvs));
     TRASH_POINTER_IF_DEBUG(pvs->executor);  // !!! new rule for drop frame
@@ -625,8 +623,8 @@ REBNATIVE(pick)
 
     Move_Value(PVS_PICKER(pvs), ARG(picker));
 
-    pvs->opt_label = NULL; // applies to e.g. :append/only returning APPEND
-    pvs->special = NULL;
+    PVS_OPT_LABEL(pvs) = nullptr;  // e.g. :append/only returning APPEND
+    PVS_OPT_SETVAL(pvs) = nullptr;
 
   redo: ;  // semicolon is intentional, next line is declaration
 
@@ -724,8 +722,8 @@ REBNATIVE(poke)
 
     Move_Value(PVS_PICKER(pvs), ARG(picker));
 
-    pvs->opt_label = nullptr;  // e.g. :append/only returning APPEND
-    pvs->special = ARG(value);
+    PVS_OPT_LABEL(pvs) = nullptr;  // e.g. :append/only returning APPEND
+    PVS_OPT_SETVAL(pvs) = ARG(value);
 
     PATH_HOOK *hook = Path_Hook_For_Type_Of(location);
 

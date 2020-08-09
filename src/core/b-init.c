@@ -995,7 +995,7 @@ void Shutdown_Tasks(void) {
 
         if (task->plug_frame) {
             REBFRM *base = FS_TOP;
-            Replug_Stack(task->plug_frame, FS_TOP, KNOWN(&task->plug));
+            Replug_Stack(task->plug_frame, FS_TOP, SPECIFIC(&task->plug));
 
             // !!! Suboptimal drop strategy; doesn't delegate to executors.
             // Review as this concept matures.
@@ -1269,7 +1269,7 @@ void Startup_Core(void)
     Startup_Mold(MIN_COMMON / 4);
 
     Startup_Data_Stack(STACK_MIN / 4);
-    Startup_Frame_Stack(); // uses Canon() in FRM_FILE() currently
+    Startup_Frame_Stack(); // uses Canon() in F_FILE() currently
 
     Startup_Api();
 

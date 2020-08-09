@@ -1018,8 +1018,8 @@ REBACT *Make_Action(
     if (not opt_exemplar) {
         //
         // No exemplar is used as a cue to set the "specialty" to paramlist,
-        // so that Push_Action() can assign f->special directly from it in
-        // dispatch, and be equal to f->param.
+        // so that Push_Action() can assign f_special directly from it in
+        // dispatch, and be equal to f_param.
         //
         LINK_SPECIALTY_NODE(details) = NOD(paramlist);
     }
@@ -1304,7 +1304,7 @@ REBTYPE(Fail)
 //
 REB_R Generic_Dispatcher(REBFRM *f)
 {
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBARR *details = ACT_DETAILS(phase);
     REBVAL *verb = SPECIFIC(ARR_HEAD(details));
     assert(IS_WORD(verb));
@@ -1315,8 +1315,8 @@ REB_R Generic_Dispatcher(REBFRM *f)
     // case of a RETURN: sitting in the first parameter slot.
     //
     REBVAL *first_arg = GET_ACTION_FLAG(phase, HAS_RETURN)
-        ? FRM_ARG(f, 2)
-        : FRM_ARG(f, 1);
+        ? F_ARG_N(f, 2)
+        : F_ARG_N(f, 1);
 
     return Run_Generic_Dispatch(first_arg, f, verb);
 }

@@ -87,7 +87,7 @@
 // specialized values (e.g. an "exemplar"), with ARRAY_FLAG_IS_VARLIST set.
 // Or just hold the paramlist.  This speeds up Push_Action() because
 // if this were `REBCTX *exemplar;` then it would have to test it for null
-// explicitly to default f->special to f->param.
+// explicitly to default f_special to f_param.
 //
 #define LINK_SPECIALTY_NODE(s)   LINK(s).custom.node
 #define LINK_SPECIALTY(s)        ARR(LINK_SPECIALTY_NODE(s))
@@ -405,7 +405,7 @@ inline static REBVAL *ACT_PARAM(REBACT *a, REBLEN n) {
 
 // An efficiency trick makes functions that do not have exemplars NOT store
 // nullptr in the LINK_SPECIALTY(info) node in that case--instead the params.
-// This makes Push_Action() slightly faster in assigning f->special.
+// This makes Push_Action() slightly faster in assigning f_special.
 //
 inline static REBCTX *ACT_EXEMPLAR(REBACT *a) {
     REBARR *details = VAL_ACT_DETAILS(ACT_ARCHETYPE(a));
@@ -506,7 +506,7 @@ static inline REBVAL *Init_Action_Maybe_Bound(
 
 
 inline static REB_R Run_Generic_Dispatch(
-    const REBVAL *first_arg,  // !!! Is this always same as FRM_ARG(f, 1)?
+    const REBVAL *first_arg,  // !!! Is this always same as F_ARG(f, 1)?
     REBFRM *f,
     const REBVAL *verb
 ){

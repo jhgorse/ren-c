@@ -55,7 +55,7 @@ enum {
 //
 static REB_R Chainer_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_CHAINER_MAX);
 
     REBARR *pipeline = VAL_ARRAY(ARR_AT(details, IDX_CHAINER_PIPELINE));
@@ -72,8 +72,8 @@ static REB_R Chainer_Dispatcher(REBFRM *f)
 
     // Extract the first function, itself which might be a chain.
     //
-    INIT_FRM_PHASE(f, VAL_ACTION(chained));
-    FRM_BINDING(f) = VAL_BINDING(chained);
+    INIT_F_PHASE(f, VAL_ACTION(chained));
+    F_BINDING(f) = VAL_BINDING(chained);
 
     return R_REDO_UNCHECKED;  // signatures should match
 }

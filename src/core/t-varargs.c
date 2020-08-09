@@ -251,9 +251,9 @@ bool Do_Vararg_Op_Maybe_End_Throws_Core(
 
         opt_vararg_frame = f;
         if (VAL_VARARGS_SIGNED_PARAM_INDEX(vararg) < 0)
-            arg = FRM_ARG(f, - VAL_VARARGS_SIGNED_PARAM_INDEX(vararg));
+            arg = F_ARG_N(f, - VAL_VARARGS_SIGNED_PARAM_INDEX(vararg));
         else
-            arg = FRM_ARG(f, VAL_VARARGS_SIGNED_PARAM_INDEX(vararg));
+            arg = F_ARG_N(f, VAL_VARARGS_SIGNED_PARAM_INDEX(vararg));
 
         if (Vararg_Op_If_No_Advance_Handled(
             out,

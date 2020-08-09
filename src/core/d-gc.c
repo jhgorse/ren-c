@@ -259,7 +259,7 @@ void Assert_Cell_Marked_Correctly(const RELVAL *v)
             assert(CTX_TYPE(context) == REB_FRAME);
             struct Reb_Frame *f = CTX_FRAME_IF_ON_STACK(context);
             if (f)  // comes from execution, not MAKE FRAME!
-                assert(VAL_BINDING(v) == FRM_BINDING(f));
+                assert(VAL_BINDING(v) == F_BINDING(f));
         }
 
         REBACT *phase = ACT(PAYLOAD(Any, v).second.node);

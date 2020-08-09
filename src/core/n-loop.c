@@ -563,11 +563,11 @@ enum {
 //  Iterator_Dispatcher: C
 //
 REB_R Iterator_Dispatcher(REBFRM *f) {
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBARR *details = ACT_DETAILS(phase);
     assert(ARR_LEN(details) >= IDX_ITERATES_MAX);
 
-    if (not IS_NULLED(FRM_ARG(f, 1))) {
+    if (not IS_NULLED(F_ARG_N(f, 1))) {
         RELVAL *param = ACT_PARAM(phase, 1);
         assert(VAL_PARAM_SYM(param) == SYM_DONE);
         UNUSED(param);
@@ -575,9 +575,9 @@ REB_R Iterator_Dispatcher(REBFRM *f) {
         return nullptr;
     }
 
-    REBVAL *data = KNOWN(ARR_AT(details, 0));
+    REBVAL *data = SPECIFIC(ARR_AT(details, 0));
 
-    REBNOD *binding = FRM_BINDING(f);
+    REBNOD *binding = F_BINDING(f);
     if (not binding) {
         REBVAL *item = rebValue("first", data, rebEND);
         Move_Value(f->out, REIFY_NULL(item));

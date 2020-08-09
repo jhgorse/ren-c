@@ -130,8 +130,8 @@ void Dump_Stack(REBFRM *f, REBLEN level)
     fflush(stdout);
 
     REBINT n = 1;
-    REBVAL *arg = FRM_ARG(f, 1);
-    REBVAL *param = ACT_PARAMS_HEAD(FRM_PHASE(f));
+    REBVAL *arg = F_ARG_N(f, 1);
+    REBVAL *param = ACT_PARAMS_HEAD(F_PHASE(f));
 
     for (; NOT_END(param); ++param, ++arg, ++n) {
         if (IS_NULLED(arg))

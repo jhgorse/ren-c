@@ -56,6 +56,10 @@
 
 #include "sys-core.h"
 
+#undef f_value
+#undef f_gotten
+#define f_next F_VALUE(f)
+#define f_next_gotten F_GOTTEN(f)
 
 // In the early development of FRAME!, the REBFRM* for evaluating across a
 // block was reused for each ACTION! call.  Since no more than one action was
@@ -79,17 +83,6 @@
     #define CURRENT_CHANGES_IF_FETCH_NEXT \
         (v == &f->feed->lookback)
 #endif
-
-
-// To allow frames to share feeds, the feed is held by pointer.  But that
-// makes accessing things verbose.  Also, the meaning is usually "next" in
-// the evaluator, since it only represents the current value very briefly as
-// it is pulled into a local for processing.  These macros shorten + clarify.
-//
-#define f_spare         FRM_SPARE(f)
-#define f_next          f->feed->value
-#define f_next_gotten   f->feed->gotten
-#define f_specifier     f->feed->specifier
 
 
 // SET-WORD! and SET-PATH! want to do roughly the same thing as the first step
@@ -294,7 +287,7 @@ REB_R Evaluator_Executor(REBFRM *f)
     assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
     SET_CELL_FLAG(f->out, OUT_MARKED_STALE);  // internal use flag only
 
-    UPDATE_EXPRESSION_START(f);  // !!! See FRM_INDEX() for caveats
+    UPDATE_EXPRESSION_START(f);  // !!! See F_INDEX() for caveats
 
     kind.byte = KIND_BYTE(f_next);
     if (kind.byte == REB_0_END)

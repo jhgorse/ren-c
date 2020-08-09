@@ -51,7 +51,7 @@ REB_R Yielder_Dispatcher(REBFRM *f)
         ST_YIELDER_RUNNING_BODY
     };
 
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBARR *details = ACT_DETAILS(phase);
     RELVAL *state = ARR_AT(details, IDX_YIELDER_STATE);
 
@@ -158,7 +158,7 @@ REB_R Yielder_Dispatcher(REBFRM *f)
     //
     REBVAL *param = CTX_KEYS_HEAD(last_yielder_context);
     REBVAL *dest = CTX_VARS_HEAD(last_yielder_context);
-    REBVAL *src = FRM_ARGS_HEAD(yielder_frame);
+    REBVAL *src = F_ARGS_HEAD(yielder_frame);
     for (; NOT_END(src); ++param, ++dest, ++src) {
         if (VAL_PARAM_CLASS(param) == REB_P_LOCAL)
             continue;  // don't overwrite locals (including YIELD)
@@ -179,66 +179,33 @@ REB_R Yielder_Dispatcher(REBFRM *f)
         //
         LINK(yielder_frame->varlist).custom.node = nullptr;
 
-<<<<<<< HEAD
-        RELVAL *data_stack = SPECIFIC(ARR_AT(details, IDX_YIELDER_DATA_STACK));
-
-        Replug_Stack(yield_frame, yielder_frame, SPECIFIC(data_stack));
-
-        // Restore the in-progress output cell state that was going on when
-        // the YIELD ran (e.g. if it interrupted a CASE or something, this
-        // would be what the case had in the out cell at moment of interrupt).
-        // Note special trick used to encode END inside an array by means of
-        // using the hidden identity of the details array itself.
-        //
-        REBVAL *out_copy = SPECIFIC(ARR_AT(details, IDX_YIELDER_OUT));
-        if (
-            KIND_BYTE_UNCHECKED(out_copy) == REB_BLOCK
-            and VAL_ARRAY(out_copy) == details
-        ){
-            SET_END(yielder_frame->out);
-        }
-        else
-            Move_Value(yielder_frame->out, out_copy);
-        if (out_copy->header.bits & CELL_FLAG_OUT_MARKED_STALE)
-            yielder_frame->out->header.bits |= CELL_FLAG_OUT_MARKED_STALE;
-
-        // We could make YIELD appear to return a VOID! when we jump back in
-         // to resume it.  But it's more interesting to return what the YIELD
-        // received as an arg (YIELD cached it in details before jumping)
-        //
-        Move_Value(
-            yield_frame->out,
-            SPECIFIC(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT))
-        );
-=======
         GC_Kill_Series(SER(yielder_frame->varlist));  // Note: no tracking
     }
 
     // When the last yielder dropped from the frame stack, it should have
     // decayed its keysource from a REBFRM* to the action that was
     // invoked (which could be an arbitrary specialization--e.g. different
-    // variants of the yielder with different f->original could be used
+    // variants of the yielder with different f_original could be used
     // between calls).  This means we can only compare underlying actions.
     //
     // Now we have a new REBFRM*, so we can reattach the context to that.
     //
     assert(
         ACT_UNDERLYING(ACT(LINK_KEYSOURCE(last_yielder_context)))
-        == ACT_UNDERLYING(yielder_frame->original)
+        == ACT_UNDERLYING(F_ORIGINAL(yielder_frame))
     );
     INIT_LINK_KEYSOURCE(last_yielder_context, NOD(yielder_frame));
 
     // Now that the last call's context varlist is pointing at our current
     // invocation frame, we point the other way from the frame to the
     // varlist.  We also update the cached pointer to the rootvar of that
-    // frame (used to speed up FRM_PHASE() and FRM_BINDING())
+    // frame (used to speed up F_PHASE() and F_BINDING())
     //
     f->varlist = CTX_VARLIST(last_yielder_context);
     f->rootvar = CTX_ARCHETYPE(last_yielder_context);  // must match
->>>>>>> First-cut hacky GC for non-terminated generators
 
-    RELVAL *plug = KNOWN(ARR_AT(details, IDX_YIELDER_PLUG));
-    Replug_Stack(yield_frame, yielder_frame, KNOWN(plug));
+    RELVAL *plug = SPECIFIC(ARR_AT(details, IDX_YIELDER_PLUG));
+    Replug_Stack(yield_frame, yielder_frame, SPECIFIC(plug));
     Init_Unreadable_Void(plug);  // Replug trashes, make GC safe
 
     // Restore the in-progress output cell state that was going on when
@@ -247,7 +214,7 @@ REB_R Yielder_Dispatcher(REBFRM *f)
     // Note special trick used to encode END inside an array by means of
     // using the hidden identity of the details array itself.
     //
-    REBVAL *out_copy = KNOWN(ARR_AT(details, IDX_YIELDER_OUT));
+    REBVAL *out_copy = SPECIFIC(ARR_AT(details, IDX_YIELDER_OUT));
     if (
         KIND_BYTE_UNCHECKED(out_copy) == REB_BLOCK
         and VAL_ARRAY(out_copy) == details
@@ -265,7 +232,7 @@ REB_R Yielder_Dispatcher(REBFRM *f)
     //
     Move_Value(
         yield_frame->out,
-        KNOWN(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT))
+        SPECIFIC(ARR_AT(details, IDX_YIELDER_LAST_YIELD_RESULT))
     );
 
     // If the yielder actually reaches its end (instead of YIELD-ing)
@@ -411,10 +378,10 @@ REBNATIVE(yield)
     INCLUDE_PARAMS_OF_YIELD;
 
     assert(frame_ == TG_Top_Frame);  // frame_ is an implicit REBNATIVE() arg
-    assert(FRM_PHASE(frame_) == NATIVE_ACT(yield));
+    assert(F_PHASE(frame_) == NATIVE_ACT(yield));
     REBFRM * const yield_frame = frame_;  // ...make synonyms more obvious
 
-    REBNOD *f_binding = FRM_BINDING(yield_frame);
+    REBNOD *f_binding = F_BINDING(yield_frame);
     if (not f_binding)
         fail (Error_Yield_Archetype_Raw());  // must have yielder to jump to
 
@@ -423,7 +390,7 @@ REBNATIVE(yield)
     if (not yielder_frame)
         fail ("Cannot yield to generator that has completed");
 
-    REBACT *yielder_phase = FRM_PHASE(yielder_frame);
+    REBACT *yielder_phase = F_PHASE(yielder_frame);
     assert(ACT_DISPATCHER(yielder_phase) == &Yielder_Dispatcher);
 
     // !!! How much sanity checking should be done before doing the passing

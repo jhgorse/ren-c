@@ -67,8 +67,9 @@ REBNATIVE(reeval)
 
     DECLARE_FRAME (subframe, frame_->feed, flags);
     subframe->executor = &Evaluator_Executor;
-    subframe->u.reval.value = ARG(value);
     Push_Frame(D_OUT, subframe);
+
+    subframe->u.reval.value = ARG(value);  // !!! Push frame corrupts u ATM
 
     SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
     STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 reserved for initial entry
@@ -299,15 +300,16 @@ REBNATIVE(shove)
             EVAL_MASK_DEFAULT | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
         );
         subframe->executor = &Evaluator_Executor;
+        Push_Frame(D_OUT, subframe);
 
         // Nuance here is needed for `x: me + 10` vs. `x: my add 10`.  Review.
+        //
+        // !!! Note: Push_Frame corrupts u ATM
         //
         if (REF(enfix))
             subframe->u.reval.value = Lookback_While_Fetching_Next(f);
         else
             subframe->u.reval.value = shovee;
-
-        Push_Frame(D_OUT, subframe);
     }
     else {
         // This case is here for:
@@ -797,7 +799,7 @@ REBNATIVE(redo)
     //
     if (REF(other)) {
         REBVAL *sibling = ARG(other);
-        if (FRM_UNDERLYING(f) != ACT_UNDERLYING(VAL_ACTION(sibling)))
+        if (ACT_UNDERLYING(f_original) != ACT_UNDERLYING(VAL_ACTION(sibling)))
             fail ("/OTHER function passed to REDO has incompatible FRAME!");
 
         INIT_VAL_CONTEXT_PHASE(restartee, VAL_ACTION(sibling));
@@ -917,7 +919,7 @@ REBNATIVE(applique)
     DROP_GC_GUARD(exemplar);
 
     assert(CTX_KEYS_HEAD(exemplar) == ACT_PARAMS_HEAD(VAL_ACTION(applicand)));
-    f->param = CTX_KEYS_HEAD(exemplar);
+    f_param = CTX_KEYS_HEAD(exemplar);
     REBCTX *stolen = Steal_Context_Vars(
         exemplar,
         NOD(VAL_ACTION(applicand))
@@ -941,11 +943,11 @@ REBNATIVE(applique)
 
     f->varlist = CTX_VARLIST(stolen);
     f->rootvar = CTX_ARCHETYPE(stolen);
-    f->arg = FRM_ARGS_HEAD(f);  // start state (cues enumeration)
-    // f->param assigned above
-    f->special = f->arg; // signal only type-check the existing data
-    INIT_FRM_PHASE(f, VAL_ACTION(applicand));
-    FRM_BINDING(f) = VAL_BINDING(applicand);
+    f_arg = F_ARGS_HEAD(f);  // start state (cues enumeration)
+    // f_param assigned above
+    f_special = f_arg; // signal only type-check the existing data
+    INIT_F_PHASE(f, VAL_ACTION(applicand));
+    F_BINDING(f) = VAL_BINDING(applicand);
 
     Begin_Prefix_Action(f, opt_label);
 

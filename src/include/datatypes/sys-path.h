@@ -78,13 +78,16 @@
     Init_Any_Path((v), REB_PATH, (a))
 
 #define PVS_OPT_SETVAL(pvs) \
-    pvs->special
+    F_SPECIAL(pvs)
 
 #define PVS_IS_SET_PATH(pvs) \
     (PVS_OPT_SETVAL(pvs) != nullptr)
 
 #define PVS_PICKER(pvs) \
-    FRM_SPARE(pvs)
+    F_SPARE(pvs)
+
+#define PVS_OPT_LABEL(pvs) \
+    F_OPT_LABEL(pvs)
 
 inline static bool Get_Path_Throws_Core(
     REBVAL *out,

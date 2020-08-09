@@ -82,7 +82,7 @@
 //
 REB_R Void_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(VAL_LEN_AT(ARR_HEAD(details)) == 0);
     UNUSED(details);
 
@@ -98,7 +98,7 @@ REB_R Void_Dispatcher(REBFRM *f)
 //
 REB_R Null_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(VAL_LEN_AT(ARR_HEAD(details)) == 0);
     UNUSED(details);
 
@@ -207,7 +207,7 @@ REB_R Elider_Dispatcher(REBFRM *f)
     // delegation to write it into the spare where it won't affect f->out.
     // That way the body could very efficiently be:
     //
-    //   `return Init_Delegation_Details_0(FRM_SPARE(f), f);`
+    //   `return Init_Delegation_Details_0(F_SPARE(f), f);`
     //
     // But the current RETURN implementation climbs the stack and trashes
     // f->out as it goes.  Not only that, there's a rule that all invisibles
@@ -229,13 +229,13 @@ REB_R Elider_Dispatcher(REBFRM *f)
 
   initial_entry: {
     if (IS_END(f->out)) {  // could happen :-/ e.g. `do [comment "" ...]`
-        Init_Void(FRM_SPARE(f));
-        SET_CELL_FLAG(FRM_SPARE(f), SPARE_MARKED_END);  // be tricky
+        Init_Void(F_SPARE(f));
+        SET_CELL_FLAG(F_SPARE(f), SPARE_MARKED_END);  // be tricky
     }
     else {
-        Move_Value(FRM_SPARE(f), f->out);  // cache, mark first step done
+        Move_Value(F_SPARE(f), f->out);  // cache, mark first step done
         if (GET_CELL_FLAG(f->out, UNEVALUATED))
-            SET_CELL_FLAG(FRM_SPARE(f), UNEVALUATED);  // proxy eval flag
+            SET_CELL_FLAG(F_SPARE(f), UNEVALUATED);  // proxy eval flag
     }
     Push_Continuation_Details_0(f->out, f);  // re-entry after eval
     STATE_BYTE(f) = ST_ELIDER_RUNNING_BODY;
@@ -243,12 +243,12 @@ REB_R Elider_Dispatcher(REBFRM *f)
   }
 
   body_ran: {
-    if (GET_CELL_FLAG(FRM_SPARE(f), SPARE_MARKED_END)) {
-        assert(IS_VOID(FRM_SPARE(f)));
+    if (GET_CELL_FLAG(F_SPARE(f), SPARE_MARKED_END)) {
+        assert(IS_VOID(F_SPARE(f)));
         SET_END(f->out);
     } else {
-        Move_Value(f->out, FRM_SPARE(f));  // restore output
-        if (GET_CELL_FLAG(FRM_SPARE(f), UNEVALUATED))
+        Move_Value(f->out, F_SPARE(f));  // restore output
+        if (GET_CELL_FLAG(F_SPARE(f), UNEVALUATED))
             SET_CELL_FLAG(f->out, UNEVALUATED);
     }
     return R_INVISIBLE;  // invisibles should always return this
@@ -264,7 +264,7 @@ REB_R Elider_Dispatcher(REBFRM *f)
 //
 REB_R Commenter_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     RELVAL *body = ARR_HEAD(details);
     assert(VAL_LEN_AT(body) == 0);
     UNUSED(body);
@@ -515,7 +515,7 @@ REB_R Init_Thrown_Unwind_Value(
             if (Is_Action_Frame_Fulfilling(f))
                 continue; // not ready to exit
 
-            if (VAL_ACTION(level) == f->original) {
+            if (VAL_ACTION(level) == f_original) {
                 INIT_BINDING_MAY_MANAGE(out, SPC(f->varlist));
                 break;
             }
@@ -578,7 +578,7 @@ REBNATIVE(return)
     // REBFRM*.  This generic RETURN dispatcher interprets that binding as the
     // FRAME! which this instance is specifically intended to return from.
     //
-    REBNOD *f_binding = FRM_BINDING(f);
+    REBNOD *f_binding = F_BINDING(f);
     if (not f_binding)
         fail (Error_Return_Archetype_Raw());  // must have binding to jump to
 
@@ -601,7 +601,7 @@ REBNATIVE(return)
     // that an ENCLOSE'd function can't return any types the original function
     // could not.  :-(
     //
-    REBACT *target_fun = FRM_UNDERLYING(target_frame);
+    REBACT *target_fun = ACT_UNDERLYING(F_ORIGINAL(target_frame));
 
     REBVAL *v = ARG(value);
 

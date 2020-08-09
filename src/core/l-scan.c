@@ -1874,6 +1874,8 @@ REB_R Scanner_Executor(REBFRM *f) {
                 EVAL_MASK_DEFAULT
                     | EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // we want accrued stack
             );
+            Push_Frame(f->out, subframe);  // !!! trashes u.scan members ATM
+            INIT_F_EXECUTOR(subframe, &Scanner_Executor);
 
             ++ss->depth;
             subframe->u.scan.ss = ss;
@@ -1890,8 +1892,6 @@ REB_R Scanner_Executor(REBFRM *f) {
             subframe->u.scan.mode_char
                 = (level->token >= TOKEN_GET_BLOCK_BEGIN) ? ']' : ')';
 
-            Push_Frame(f->out, subframe);
-            INIT_F_EXECUTOR(subframe, &Scanner_Executor);
             STATE_BYTE(f) = ST_SCANNER_SCANNING_CHILD_ARRAY;
             return R_CONTINUATION; }
 
@@ -2572,12 +2572,13 @@ REB_R Scanner_Executor(REBFRM *f) {
 //
 REBVAL *Scan_To_Stack(SCAN_LEVEL *level) {
     DECLARE_END_FRAME (f, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    f->u.scan = *level;
     INIT_F_EXECUTOR(f, &Scanner_Executor);
 
     DECLARE_LOCAL (temp);
     SET_END(temp);
     Push_Frame(temp, f);
+
+    f->u.scan = *level;  // !!! Push_Frame currently trashes f->u members
 
     bool threw = Trampoline_Throws(f);
 
@@ -2868,6 +2869,8 @@ REBNATIVE(transcode)
     const REBYTE *bp = VAL_BYTES_AT(&size, source);
 
     DECLARE_END_FRAME (f, EVAL_MASK_DEFAULT | EVAL_FLAG_TRAMPOLINE_KEEPALIVE);
+    INIT_F_EXECUTOR(f, &Scanner_Executor);
+    Push_Frame(D_OUT, f);  // !!! Note: corrupts f->u.scan ATM
 
     SCAN_STATE *ss = TRY_ALLOC(SCAN_STATE);
     Init_Scan_Level(&f->u.scan, ss, filename, start_line, bp, size);
@@ -2875,9 +2878,6 @@ REBNATIVE(transcode)
     if (REF(next))
         f->u.scan.opts |= SCAN_FLAG_NEXT;
 
-    INIT_F_EXECUTOR(f, &Scanner_Executor);
-
-    Push_Frame(D_OUT, f);
     SET_EVAL_FLAG(frame_, DISPATCHER_CATCHES);
     D_STATE_BYTE = ST_TRANSCODE_SCANNING;
     return R_CONTINUATION;

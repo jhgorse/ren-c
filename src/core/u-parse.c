@@ -155,12 +155,12 @@ enum {
 // conentious--again, perhaps the stackless conversion overhaul can clarify.
 //
 #define P_RULE              (f->u.parse.rule)
-#define P_SUBRULE           (f->param)
+#define P_SUBRULE           (f_param)
 #define P_SET_OR_COPY_WORD  (f->u.parse.set_or_copy_word)
 
 #define P_OUT (f->out)
 
-#define P_CELL FRM_SPARE(f)
+#define P_CELL F_SPARE(f)
 
 // !!! R3-Alpha's PARSE code long predated frames, and was retrofitted to use
 // them as an experiment in Revolt.  If it followed the rules of frames, then
@@ -269,9 +269,9 @@ void Pack_Subparse(
     Drop_Action(f);  // keep frame around.
     INIT_F_EXECUTOR(f, &Parse_Executor);
 
-/*   f->param = END_NODE; // informs infix lookahead
-    f->arg = m_cast(REBVAL*, END_NODE);
-    f->special = END_NODE; */
+/*   f_param = END_NODE; // informs infix lookahead
+    f_arg = m_cast(REBVAL*, END_NODE);
+    f_special = END_NODE; */
 
     Init_Nulled(Prep_Cell(P_RETURN_VALUE));  // not used
 
@@ -1550,13 +1550,13 @@ REB_R Parse_Executor(REBFRM *frame_) {
             SET_END(D_OUT);
         }
 
-        // !!! For now we are using f->param to hold the subrule pointer.
+        // !!! For now we are using f_param to hold the subrule pointer.
         // That would be illegal if this were a frame used in an action.
         // Since subparse is its own Executor, it's okay, as the subparse
         // rule does not need to be seen by GC (it's either P_SAVE or it is
         // valid from the input rules that are locked).
         //
-        assert(IS_POINTER_TRASH_DEBUG(f->original));
+        assert(IS_POINTER_TRASH_DEBUG(f_original));
         TRASH_POINTER_IF_DEBUG(P_RULE);
         TRASH_POINTER_IF_DEBUG(P_SUBRULE);
         TRASH_POINTER_IF_DEBUG(P_SET_OR_COPY_WORD);
@@ -1684,7 +1684,7 @@ REB_R Parse_Executor(REBFRM *frame_) {
         assert(IS_END(P_OUT));
         Push_Frame(P_OUT, subframe);
 
-        Init_Logic(FRM_SPARE(f), IS_GET_GROUP(P_RULE));
+        Init_Logic(F_SPARE(f), IS_GET_GROUP(P_RULE));
         D_STATE_BYTE = ST_PARSE_EVALUATING_GROUP;
         return R_CONTINUATION;
       }
@@ -1696,7 +1696,7 @@ REB_R Parse_Executor(REBFRM *frame_) {
         // We don't over-aggressively Derelativize() values we don't need
         // to.  So we don't pass the GROUP! or GET-GROUP!, just a flag.
         //
-        bool inject = VAL_LOGIC(FRM_SPARE(f));  // true -> a GET-GROUP!
+        bool inject = VAL_LOGIC(F_SPARE(f));  // true -> a GET-GROUP!
 
         // !!! Input is not locked from modification by agents other than
         // PARSE's own REMOVE/etc.  This is a sketchy idea, but as long as
@@ -2240,7 +2240,7 @@ REB_R Parse_Executor(REBFRM *frame_) {
     // time through.
     //
     // !!! Capturing this into a local variable cannot be preserved across
-    // continuations.  So P_SUBRULE was changed to use the frame's f->param,
+    // continuations.  So P_SUBRULE was changed to use the frame's f_param,
     // which is permitted to point to either the frame's cell or a persistent
     // location, and hence not needed to be GC protected.
     //

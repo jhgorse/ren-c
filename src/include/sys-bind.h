@@ -390,9 +390,9 @@ inline static void INIT_BINDING_MAY_MANAGE(RELVAL *out, REBNOD* binding) {
     if (not binding or GET_SERIES_FLAG(binding, MANAGED))
         return;  // unbound or managed already (frame OR object context)
 
-    REBFRM *f = FRM(LINK_KEYSOURCE(binding));  // unmanaged can only be frame
-    assert(IS_END(f->param));  // cannot manage frame varlist in mid fulfill!
-    UNUSED(f);
+    REBFRM *f = FRM(LINK_KEYSOURCE(binding));
+    assert(IS_END(f->u.action.param)); // can't manage varlist in mid fulfill!
+    UNUSED(f); // !!! not actually used yet, coming soon
 
     binding->header.bits |= NODE_FLAG_MANAGED; // burdens the GC, now...
 }

@@ -224,10 +224,10 @@ REBNATIVE(panic)
     // began its frame, not including later ticks for fulfilling ARG(value).
     //
   #ifdef DEBUG_COUNT_TICKS
-    Panic_Core(p, frame_->tick, FRM_FILE_UTF8(frame_), FRM_LINE(frame_));
+    Panic_Core(p, frame_->tick, F_FILE_UTF8(frame_), F_LINE(frame_));
   #else
     const REBTCK tick = 0;
-    Panic_Core(p, tick, FRM_FILE_UTF8(frame_), FRM_LINE(frame_));
+    Panic_Core(p, tick, F_FILE_UTF8(frame_), F_LINE(frame_));
   #endif
 }
 
@@ -251,10 +251,10 @@ REBNATIVE(panic_value)
     // is the exact moment before the PANIC-VALUE ACTION! was invoked.
     //
     Panic_Core(
-        ARG(value), frame_->tick, FRM_FILE_UTF8(frame_), FRM_LINE(frame_)
+        ARG(value), frame_->tick, F_FILE_UTF8(frame_), F_LINE(frame_)
     );
   #else
     const REBTCK tick = 0;
-    Panic_Core(ARG(value), tick, FRM_FILE_UTF8(frame_), FRM_LINE(frame_));
+    Panic_Core(ARG(value), tick, F_FILE_UTF8(frame_), F_LINE(frame_));
   #endif
 }

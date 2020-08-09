@@ -76,7 +76,7 @@ enum {
 //
 REB_R Block_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_DOES_MAX);
 
     RELVAL *block = ARR_AT(details, IDX_DOES_BLOCK);
@@ -84,7 +84,7 @@ REB_R Block_Dispatcher(REBFRM *f)
     assert(IS_BLOCK(block) and VAL_INDEX(block) == 0);
 
     if (IS_SPECIFIC(block)) {
-        if (FRM_BINDING(f) == UNBOUND) {
+        if (F_BINDING(f) == UNBOUND) {
             if (Do_Any_Array_At_Throws(f->out, SPECIFIC(block), SPECIFIED))
                 return R_THROWN;
             return f->out;
@@ -109,7 +109,7 @@ REB_R Block_Dispatcher(REBFRM *f)
 
         REBARR *body_array = Copy_And_Bind_Relative_Deep_Managed(
             SPECIFIC(block),
-            ACT_PARAMLIST(FRM_PHASE(f)),
+            ACT_PARAMLIST(F_PHASE(f)),
             TS_WORD,
             false  // do not gather LETs
         );
@@ -124,7 +124,7 @@ REB_R Block_Dispatcher(REBFRM *f)
 
         // Update block cell as a relativized copy (we won't do this again).
         //
-        REBACT *phase = FRM_PHASE(f);
+        REBACT *phase = F_PHASE(f);
         Init_Relative_Block(block, phase, body_array);
     }
 

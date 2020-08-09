@@ -627,7 +627,7 @@ static void ffi_to_rebol(
 //
 REB_R Routine_Dispatcher(REBFRM *f)
 {
-    REBRIN *rin = ACT_DETAILS(FRM_PHASE(f));
+    REBRIN *rin = ACT_DETAILS(F_PHASE(f));
 
     if (RIN_IS_CALLBACK(rin) or RIN_LIB(rin) == nullptr) {
         //
@@ -650,10 +650,10 @@ REB_R Routine_Dispatcher(REBFRM *f)
         // The function specification should have one extra parameter for
         // the variadic source ("...")
         //
-        assert(ACT_NUM_PARAMS(FRM_PHASE(f)) == num_fixed + 1);
+        assert(ACT_NUM_PARAMS(F_PHASE(f)) == num_fixed + 1);
 
-        REBVAL *vararg = FRM_ARG(f, num_fixed + 1); // 1-based
-        assert(IS_VARARGS(vararg) and FRM_BINDING(f) == UNBOUND);
+        REBVAL *vararg = F_ARG_N(f, num_fixed + 1); // 1-based
+        assert(IS_VARARGS(vararg) and F_BINDING(f) == UNBOUND);
 
         // Evaluate the VARARGS! feed of values to the data stack.  This way
         // they will be available to be counted, to know how big to make the
@@ -750,9 +750,9 @@ REB_R Routine_Dispatcher(REBFRM *f)
         uintptr_t offset = arg_to_ffi(
             store,  // ffi-converted arg appended here
             nullptr,  // dest pointer must be nullptr if store is non-null
-            FRM_ARG(f, i + 1),  // 1-based
+            F_ARG_N(f, i + 1),  // 1-based
             RIN_ARG_SCHEMA(rin, i),  // 0-based
-            ACT_PARAM(FRM_PHASE(f), i + 1)  // 1-based
+            ACT_PARAM(F_PHASE(f), i + 1)  // 1-based
         );
 
         // We will convert the offset to a pointer later

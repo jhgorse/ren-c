@@ -152,8 +152,8 @@ REB_R Measured_Dispatch_Hook(REBFRM * const f)
 {
     REBMAP *m = VAL_MAP(Root_Stats_Map);
 
-    REBACT *phase = FRM_PHASE(f);
-    bool is_first_phase = (phase == f->original);
+    REBACT *phase = F_PHASE(f);
+    bool is_first_phase = (phase == f_original);
 
     // We can only tell if it's the last phase *before* the apply; because if
     // we check *after* it may change to become the last and need R_REDO_XXX.
@@ -185,7 +185,7 @@ REB_R Measured_Dispatch_Hook(REBFRM * const f)
         const bool cased = false;
         REBINT n = Find_Map_Entry(
             m,
-            ACT_ARCHETYPE(f->original),
+            ACT_ARCHETYPE(f_original),
             SPECIFIED,
             NULL, // searching now, not inserting, so pass NULL
             SPECIFIED,
@@ -197,8 +197,8 @@ REB_R Measured_Dispatch_Hook(REBFRM * const f)
             // There's no entry yet for this ACTION!, initialize one.
 
             REBARR *a = Make_Array(IDX_STATS_MAX);
-            if (f->opt_label != NULL)
-                Init_Word(ARR_AT(a, IDX_STATS_SYMBOL), f->opt_label);
+            if (f_opt_label)
+                Init_Word(ARR_AT(a, IDX_STATS_SYMBOL), f_opt_label);
             else
                 Init_Blank(ARR_AT(a, IDX_STATS_SYMBOL));
             Init_Integer(ARR_AT(a, IDX_STATS_NUMCALLS), 1);
@@ -209,7 +209,7 @@ REB_R Measured_Dispatch_Hook(REBFRM * const f)
 
             n = Find_Map_Entry(
                 m,
-                ACT_ARCHETYPE(f->original),
+                ACT_ARCHETYPE(f_original),
                 SPECIFIED,
                 stats, // inserting now, so don't pass NULL
                 SPECIFIED,
@@ -233,9 +233,9 @@ REB_R Measured_Dispatch_Hook(REBFRM * const f)
             ){
                 if (
                     IS_BLANK(ARR_AT(a, IDX_STATS_SYMBOL))
-                    && f->opt_label != NULL
+                    && f_opt_label
                 ){
-                    Init_Word(ARR_AT(a, IDX_STATS_SYMBOL), f->opt_label);
+                    Init_Word(ARR_AT(a, IDX_STATS_SYMBOL), f_opt_label);
                 }
                 Init_Integer(
                     ARR_AT(a, IDX_STATS_NUMCALLS),

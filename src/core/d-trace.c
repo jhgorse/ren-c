@@ -71,7 +71,7 @@ REBINT Eval_Depth(void)
     REBINT depth = 0;
     REBFRM *frame = FS_TOP;
 
-    for (; frame != FS_BOTTOM; frame = FRM_PRIOR(frame), depth++)
+    for (; frame != FS_BOTTOM; frame = F_PRIOR(frame), depth++)
         NOOP;
 
     return depth;
@@ -89,7 +89,7 @@ REBFRM *Frame_At_Depth(REBLEN n)
         if (n == 0) return frame;
 
         --n;
-        frame = FRM_PRIOR(frame);
+        frame = F_PRIOR(frame);
     }
 
     return NULL;
@@ -151,7 +151,7 @@ REBVAL *Trace_Eval_Dangerous(REBFRM *f)
 
     rebElide("loop 4 *", rebI(depth), "[write-stdout space]", rebEND);
 
-    if (FRM_IS_VARIADIC(f)) {
+    if (F_IS_VARIADIC(f)) {
         //
         // If you are doing a sequence of REBVAL* held in a C va_list,
         // it doesn't have an "index".  It could manufacture one if
@@ -165,7 +165,7 @@ REBVAL *Trace_Eval_Dangerous(REBFRM *f)
     }
     else {
         rebElide("write-stdout spaced [",
-            rebI(FRM_INDEX(f)), "{:} mold/limit", v, "50",
+            rebI(F_INDEX(f)), "{:} mold/limit", v, "50",
         "]", rebEND);
     }
 
@@ -289,7 +289,7 @@ REBVAL *Trace_Action_Dangerous(REBFRM *f)
     "]", rebEND);
 
     if (Trace_Flags & TRACE_FLAG_FUNCTION)
-        rebElide("TBD Dump FRM_ARG(FS_TOP, 1), FRM_NUM_ARGS(FS_TOP)", rebEND);
+        rebElide("TBD Dump F_ARG(FS_TOP, 1), F_NUM_ARGS(FS_TOP)", rebEND);
     else
         rebElide("write-stdout newline", rebEND);
 
@@ -348,7 +348,7 @@ REBVAL *Trace_Return_Dangerous(struct Reb_Return_Descriptor *d)
             "]", rebEND);
         }
 
-        Init_Thrown_With_Label(f->out, arg, f->arg);
+        Init_Thrown_With_Label(f->out, arg, f_arg);
     }
     else if (not r) { // -> "\null\", backslash escaped
         rebElide("print {\\null\\}", rebEND);
@@ -389,9 +389,9 @@ REB_R Traced_Dispatch_Hook(REBFRM * const f)
 
     PG_Dispatch = &Dispatch_Internal;  // don't trace the trace!
 
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
 
-    if (phase == f->original) {
+    if (phase == f_original) {
         //
         // Only show the label if this phase is the first phase.
 

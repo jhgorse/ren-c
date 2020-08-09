@@ -673,7 +673,7 @@ void INIT_WORD_INDEX_Extra_Checks_Debug(RELVAL *v, REBLEN i)
     REBNOD *binding = VAL_BINDING(v);
     REBARR *keysource;
     if (NOT_SERIES_FLAG(binding, MANAGED))
-        keysource = ACT_PARAMLIST(FRM_PHASE(FRM(LINK_KEYSOURCE(binding))));
+        keysource = ACT_PARAMLIST(F_PHASE(FRM(LINK_KEYSOURCE(binding))));
     else if (GET_ARRAY_FLAG(binding, IS_PARAMLIST))
         keysource = ACT_PARAMLIST(ACT(binding));
     else

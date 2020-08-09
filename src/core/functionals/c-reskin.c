@@ -89,7 +89,7 @@ REBNATIVE(skinner_return_helper)
     // !!! Same code as in Returner_Dispatcher()...should it be moved to a
     // shared inline location?
 
-    REBACT *phase = ACT(FRM_BINDING(f));
+    REBACT *phase = ACT(F_BINDING(f));
 
     REBVAL *param = ACT_PARAMS_HEAD(phase);
     assert(VAL_PARAM_SYM(param) == SYM_RETURN);
@@ -117,13 +117,13 @@ REBNATIVE(skinner_return_helper)
 //
 REB_R Skinner_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_SKINNER_MAX);
 
     REBVAL *skinned = SPECIFIC(ARR_AT(details, IDX_SKINNER_SKINNED));
 
-    REBVAL *param = ACT_PARAMS_HEAD(FRM_PHASE(f));
-    REBVAL *arg = FRM_ARGS_HEAD(f);
+    REBVAL *param = ACT_PARAMS_HEAD(F_PHASE(f));
+    REBVAL *arg = F_ARGS_HEAD(f);
     for (; NOT_END(param); ++param, ++arg) {
         if (TYPE_CHECK(param, REB_TS_SKIN_EXPANDED))
             CLEAR_CELL_FLAG(arg, ARG_MARKED_CHECKED);
@@ -145,10 +145,10 @@ REB_R Skinner_Dispatcher(REBFRM *f)
     Init_Action_Maybe_Bound(
         DS_PUSH(),
         NATIVE_ACT(skinner_return_helper),
-        NOD(FRM_PHASE(f))
+        NOD(F_PHASE(f))
     );
 
-    INIT_FRM_PHASE(f, VAL_ACTION(skinned));
+    INIT_F_PHASE(f, VAL_ACTION(skinned));
 
     // We captured the binding for the skin when the action was made; if the
     // user rebound the action, then don't overwrite with the one in the

@@ -67,14 +67,14 @@ enum {
 //
 static REB_R Augmenter_Dispatcher(REBFRM *f)
 {
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBARR *details = ACT_DETAILS(phase);
     assert(ARR_LEN(details) == IDX_AUGMENTER_MAX);
 
     RELVAL *augmentee = ARR_AT(details, IDX_AUGMENTER_AUGMENTEE);
 
-    INIT_FRM_PHASE(f, VAL_ACTION(augmentee));
-    FRM_BINDING(f) = VAL_BINDING(augmentee);
+    INIT_F_PHASE(f, VAL_ACTION(augmentee));
+    F_BINDING(f) = VAL_BINDING(augmentee);
 
     return R_REDO_UNCHECKED;  // signatures should match
 }

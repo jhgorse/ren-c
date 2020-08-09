@@ -156,7 +156,7 @@ inline static REBVAL *DS_AT(REBDSP d) {
 inline static void Push_Stack_Values(REBARR *a) {
     RELVAL *item = ARR_HEAD(a);
     for (; NOT_END(item); ++item)
-        Move_Value(DS_PUSH(), KNOWN(item));    
+        Move_Value(DS_PUSH(), SPECIFIC(item));    
 }
 
 

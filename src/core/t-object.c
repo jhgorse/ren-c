@@ -758,21 +758,21 @@ REBTYPE(Context)
 
         switch (sym) {
           case SYM_FILE: {
-            REBSTR *file = FRM_FILE(f);
+            REBSTR *file = F_FILE(f);
             if (not file)
                 return nullptr;
             return Init_Word(D_OUT, file); }
 
           case SYM_LINE: {
-            REBLIN line = FRM_LINE(f);
+            REBLIN line = F_LINE(f);
             if (line == 0)
                 return nullptr;
             return Init_Integer(D_OUT, line); }
 
           case SYM_LABEL: {
-            if (not Is_Action_Frame(f) or not f->opt_label)
+            if (not Is_Action_Frame(f) or not f_opt_label)
                 return nullptr;
-            return Init_Word(D_OUT, f->opt_label); }
+            return Init_Word(D_OUT, f_opt_label); }
 
           case SYM_NEAR:
             return Init_Near_For_Frame(D_OUT, f);

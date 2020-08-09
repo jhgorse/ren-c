@@ -739,7 +739,7 @@ const void *RL_rebArgR(unsigned char quotes, const void *p, va_list *vaptr)
     ENTER_API;
 
     REBFRM *f = FS_TOP;
-    REBACT *act = FRM_PHASE(f);
+    REBACT *act = F_PHASE(f);
 
     // !!! Currently the JavaScript wrappers do not do the right thing for
     // taking just a `const char*`, so this falsely is a variadic to get the
@@ -763,7 +763,7 @@ const void *RL_rebArgR(unsigned char quotes, const void *p, va_list *vaptr)
     REBSTR *spelling = Intern_UTF8_Managed(cb_cast(name), strsize(name));
 
     REBVAL *param = ACT_PARAMS_HEAD(act);
-    REBVAL *arg = FRM_ARGS_HEAD(f);
+    REBVAL *arg = F_ARGS_HEAD(f);
     for (; NOT_END(param); ++param, ++arg) {
         if (SAME_STR(VAL_PARAM_SPELLING(param), spelling))
             return arg;

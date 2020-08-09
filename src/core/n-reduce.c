@@ -68,8 +68,9 @@ REBNATIVE(reduce)
             EVAL_MASK_DEFAULT | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
         );
         subframe->executor = &Evaluator_Executor;
-        subframe->u.reval.value = v;
         Push_Frame(D_OUT, subframe);
+
+        subframe->u.reval.value = v;  // !!! Push_Frame corrupts u ATM
 
         SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
         D_STATE_BYTE = 1;  // D_STATE_BYTE == 0 reserved for initial entry
@@ -92,9 +93,9 @@ REBNATIVE(reduce)
     // won't have the starting value anymore.  Cache newline flag in D_SPARE
     // (which doubles as a non-END signal that we are not on our first call).
     //
-    bool newline_before = IS_END(F_VALUE(f))
+    bool newline_before = IS_END(f_value)
         ? false
-        : GET_CELL_FLAG(F_VALUE(f), NEWLINE_BEFORE);
+        : GET_CELL_FLAG(f_value, NEWLINE_BEFORE);
     Init_Logic(D_SPARE, newline_before);
     D_STATE_BYTE = ST_REDUCE_EVAL_STEP;
     return R_CONTINUATION;
@@ -112,7 +113,7 @@ REBNATIVE(reduce)
     assert(GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // flag is not cleared
 
     if (IS_END(D_OUT)) {  // e.g. `reduce []` or `reduce [comment "hi"]`
-        assert(IS_END(F_VALUE(f)));
+        assert(IS_END(f_value));
 
         // !!! Could shortcut here, but assume it's uncommon, and it's more
         // important to keep the block-has-newline-end logic/etc. consistent
@@ -135,9 +136,9 @@ REBNATIVE(reduce)
         if (VAL_LOGIC(D_SPARE))
             SET_CELL_FLAG(DS_TOP, NEWLINE_BEFORE);
 
-        if (NOT_END(F_VALUE(f))) {
+        if (NOT_END(f_value)) {
             SET_END(D_OUT);  // result if all invisibles
-            Init_Logic(D_SPARE, GET_CELL_FLAG(F_VALUE(f), NEWLINE_BEFORE));
+            Init_Logic(D_SPARE, GET_CELL_FLAG(f_value, NEWLINE_BEFORE));
             INIT_F_EXECUTOR(f, &Evaluator_Executor);
             assert(D_STATE_BYTE == ST_REDUCE_EVAL_STEP);
             return R_CONTINUATION;
@@ -206,7 +207,7 @@ REB_R Composer_Executor(REBFRM *f) {
         return R_THROWN;
     }
 
-    REBFRM *frame_ = CTX_FRAME_IF_ON_STACK(VAL_CONTEXT(FRM_SPARE(f)));
+    REBFRM *frame_ = CTX_FRAME_IF_ON_STACK(VAL_CONTEXT(F_SPARE(f)));
     assert(frame_ != nullptr);
 
     enum {
@@ -241,16 +242,16 @@ REB_R Composer_Executor(REBFRM *f) {
   }
 
   push_current: {
-    if (IS_END(F_VALUE(f))) {
+    if (IS_END(f_value)) {
         Init_Logic(D_OUT, GET_CELL_FLAG(D_SPARE, SPARE_MARKED_CHANGED));
         return D_OUT;  // TRUE if accumulated modifications, FALSE if not
     }
 
-    const REBCEL *cell = VAL_UNESCAPED(F_VALUE(f));
+    const REBCEL *cell = VAL_UNESCAPED(f_value);
     enum Reb_Kind kind = CELL_KIND(cell);  // notice `''(...)`
 
     if (not ANY_ARRAY_OR_PATH_KIND(kind)) {  // won't substitute/recurse
-        Derelativize(DS_PUSH(), F_VALUE(f), F_SPECIFIER(f));
+        Derelativize(DS_PUSH(), f_value, f_specifier);
         goto push_next;   // ^-- Note: keeps newline flag
     }
 
@@ -264,18 +265,18 @@ REB_R Composer_Executor(REBFRM *f) {
         // Don't compose at this level, but may need to walk deeply to
         // find compositions inside it if /DEEP and it's an array
     }
-    else if (not only and Is_Any_Doubled_Group(F_VALUE(f))) {
-        RELVAL *inner = VAL_ARRAY_AT(F_VALUE(f));
+    else if (not only and Is_Any_Doubled_Group(f_value)) {
+        RELVAL *inner = VAL_ARRAY_AT(f_value);
         if (Match_For_Compose(inner, label)) {
             STATE_BYTE(f) = ST_COMPOSER_DOUBLE_GROUP_EVAL;
             match = inner;
-            match_specifier = Derive_Specifier(F_SPECIFIER(f), inner);
+            match_specifier = Derive_Specifier(f_specifier, inner);
         }
     }
     else {  // plain compose, if match
-        if (Match_For_Compose(F_VALUE(f), label)) {
-            match = F_VALUE(f);
-            match_specifier = F_SPECIFIER(f);
+        if (Match_For_Compose(f_value, label)) {
+            match = f_value;
+            match_specifier = f_specifier;
         }
     }
 
@@ -307,7 +308,7 @@ REB_R Composer_Executor(REBFRM *f) {
         DECLARE_FRAME_AT_CORE (
             deepframe,
             cast(const RELVAL*, cell),  // unescaped array (w/no QUOTEs),
-            F_SPECIFIER(f),
+            f_specifier,
             EVAL_MASK_DEFAULT
                 | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
         );
@@ -316,7 +317,7 @@ REB_R Composer_Executor(REBFRM *f) {
         // Allow the subframe to pick up on the initial parameterization
         // of the COMPOSE (even though it has no varlist of its own).
         //
-        Move_Value(FRM_SPARE(deepframe), FRM_SPARE(f));
+        Move_Value(F_SPARE(deepframe), F_SPARE(f));
 
         // The subframe knows its own original DSP, and will remember it
         // and still be on the stack when it returns.  Everything else it
@@ -331,7 +332,7 @@ REB_R Composer_Executor(REBFRM *f) {
     else {
         // compose [[(1 + 2)] (3 + 4)] => [[(1 + 2)] 7]  ; non-deep
         //
-        Derelativize(DS_PUSH(), F_VALUE(f), F_SPECIFIER(f));
+        Derelativize(DS_PUSH(), f_value, f_specifier);
             // ^-- Note: keeps newline flag
     }
 
@@ -339,8 +340,8 @@ REB_R Composer_Executor(REBFRM *f) {
   }
 
   any_group_eval_finished: {  // looks at STATE_BYTE() for if doubled group
-    REBLEN quotes = VAL_NUM_QUOTES(F_VALUE(f));
-    const REBCEL *cell = VAL_UNESCAPED(F_VALUE(f));
+    REBLEN quotes = VAL_NUM_QUOTES(f_value);
+    const REBCEL *cell = VAL_UNESCAPED(f_value);
     enum Reb_Kind kind = CELL_KIND(cell);  // notice `''(...)`
 
     REBVAL *insert;
@@ -381,7 +382,7 @@ REB_R Composer_Executor(REBFRM *f) {
             // that block to fit on one line?
             //
             Derelativize(DS_PUSH(), push, VAL_SPECIFIER(insert));
-            if (GET_CELL_FLAG(F_VALUE(f), NEWLINE_BEFORE))
+            if (GET_CELL_FLAG(f_value, NEWLINE_BEFORE))
                 SET_CELL_FLAG(DS_TOP, NEWLINE_BEFORE);
             else
                 CLEAR_CELL_FLAG(DS_TOP, NEWLINE_BEFORE);
@@ -415,7 +416,7 @@ REB_R Composer_Executor(REBFRM *f) {
 
         // Use newline intent from the GROUP! in the compose pattern
         //
-        if (GET_CELL_FLAG(F_VALUE(f), NEWLINE_BEFORE))
+        if (GET_CELL_FLAG(f_value, NEWLINE_BEFORE))
             SET_CELL_FLAG(DS_TOP, NEWLINE_BEFORE);
         else
             CLEAR_CELL_FLAG(DS_TOP, NEWLINE_BEFORE);
@@ -428,7 +429,7 @@ REB_R Composer_Executor(REBFRM *f) {
     Init_Unreadable_Void(f->out);  // shouldn't leak temp eval
   #endif
 
-    SET_CELL_FLAG(FRM_SPARE(f), SPARE_MARKED_CHANGED);  // signal not no-op
+    SET_CELL_FLAG(F_SPARE(f), SPARE_MARKED_CHANGED);  // signal not no-op
     goto push_next;  // keep going
   }
 
@@ -436,11 +437,11 @@ REB_R Composer_Executor(REBFRM *f) {
     REBFRM *subframe = FS_TOP;
     assert(subframe->prior == f);
 
-    REBLEN quotes = VAL_NUM_QUOTES(F_VALUE(f));
-    const REBCEL *cell = VAL_UNESCAPED(F_VALUE(f));
+    REBLEN quotes = VAL_NUM_QUOTES(f_value);
+    const REBCEL *cell = VAL_UNESCAPED(f_value);
     enum Reb_Kind kind = CELL_KIND(cell);  // notice `''(...)`
 
-    if (NOT_CELL_FLAG(FRM_SPARE(subframe), SPARE_MARKED_CHANGED)) {
+    if (NOT_CELL_FLAG(F_SPARE(subframe), SPARE_MARKED_CHANGED)) {
         //
         // To save on memory usage, Ren-C does not make copies of
         // arrays that don't have some substitution under them.  This
@@ -448,7 +449,7 @@ REB_R Composer_Executor(REBFRM *f) {
         //
         DS_DROP_TO(subframe->baseline.dsp);
         Drop_Frame(subframe);
-        Derelativize(DS_PUSH(), F_VALUE(f), F_SPECIFIER(f));
+        Derelativize(DS_PUSH(), f_value, f_specifier);
         goto push_next;  // keep going
     }
 
@@ -472,11 +473,11 @@ REB_R Composer_Executor(REBFRM *f) {
 
     Quotify(DS_TOP, quotes);  // match original quoting
 
-    if (GET_CELL_FLAG(F_VALUE(f), NEWLINE_BEFORE))
+    if (GET_CELL_FLAG(f_value, NEWLINE_BEFORE))
         SET_CELL_FLAG(DS_TOP, NEWLINE_BEFORE);
 
     Drop_Frame_Unbalanced(subframe);
-    SET_CELL_FLAG(FRM_SPARE(f), SPARE_MARKED_CHANGED);  // signal not no-op
+    SET_CELL_FLAG(F_SPARE(f), SPARE_MARKED_CHANGED);  // signal not no-op
     goto push_next;  // keep going
   }
 }
@@ -557,7 +558,7 @@ REBNATIVE(compose)
     // Allow the subframe to pick up on the initial parameterization
     // of the COMPOSE (even though it has no varlist of its own).
     //
-    Init_Frame(FRM_SPARE(composer), Context_For_Frame_May_Manage(frame_));
+    Init_Frame(F_SPARE(composer), Context_For_Frame_May_Manage(frame_));
     INIT_F_EXECUTOR(composer, &Composer_Executor);
     D_STATE_BYTE = ST_COMPOSE_COMPOSING;
     return R_CONTINUATION;

@@ -246,7 +246,7 @@ inline static OPT_REBSYM VAL_WORD_SYM(const REBCEL *v) {
 
 inline static void INIT_WORD_INDEX(RELVAL *v, REBLEN i) {
   #if !defined(NDEBUG)
-    INIT_WORD_INDEX_Extra_Checks_Debug(v, i); // not inline, needs FRM_PHASE()
+    INIT_WORD_INDEX_Extra_Checks_Debug(v, i); // not inline, needs F_PHASE()
   #endif
     INIT_WORD_INDEX_UNCHECKED(v, i);
 }

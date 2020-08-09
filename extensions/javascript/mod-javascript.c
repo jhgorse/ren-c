@@ -775,10 +775,10 @@ EXTERN_C void RL_rebSignalRejectNative_internal(intptr_t frame_id) {
 //
 REB_R JavaScript_Dispatcher(REBFRM *f)
 {
-    heapaddr_t native_id = Native_Id_For_Action(FRM_PHASE(f));
+    heapaddr_t native_id = Native_Id_For_Action(F_PHASE(f));
     heapaddr_t frame_id = Frame_Id_For_Frame_May_Outlive_Call(f);
 
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     bool is_awaiter = VAL_LOGIC(ARR_AT(details, IDX_JS_NATIVE_IS_AWAITER));
 
     TRACE("JavaScript_Dispatcher(%s)", Frame_Label_Or_Anonymous_UTF8(f));

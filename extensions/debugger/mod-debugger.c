@@ -210,7 +210,7 @@ REBNATIVE(resume)
     // is no NATIVE_VAL() for extensions, yet...extract from current frame.)
     //
     DECLARE_LOCAL (resume);
-    Init_Action_Maybe_Bound(resume, FRM_PHASE(frame_), FRM_BINDING(frame_));
+    Init_Action_Maybe_Bound(resume, F_PHASE(frame_), F_BINDING(frame_));
 
     // We don't want to run the expression yet.  If we tried to run code from
     // this stack level--and it failed or threw--we'd stay stuck in the

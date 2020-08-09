@@ -159,7 +159,7 @@ ATTRIBUTE_NO_RETURN void Fail_Core(const void *p)
                 --v_seek;
             REBFRM *f_seek = FS_TOP;
             REBACT *act = VAL_ACTION(v_seek);
-            while (f_seek->original != act) {
+            while (F_ORIGINAL(f_seek) != act) {
                 --f_seek;
                 if (f_seek == FS_BOTTOM)
                     panic ("fail (PAR(name)); issued for param not on stack");
@@ -235,7 +235,7 @@ REBLEN Stack_Depth(void)
                 ++depth;
             }
 
-        f = FRM_PRIOR(f);
+        f = F_PRIOR(f);
     }
 
     return depth;
@@ -966,21 +966,21 @@ REBCTX *Error_Invalid_Arg(REBFRM *f, const RELVAL *param)
 {
     assert(IS_PARAM(param));
 
-    RELVAL *rootparam = ARR_HEAD(ACT_PARAMLIST(FRM_PHASE(f)));
+    RELVAL *rootparam = ARR_HEAD(ACT_PARAMLIST(F_PHASE(f)));
     assert(IS_ACTION(rootparam));
     assert(param > rootparam);
-    assert(param <= rootparam + 1 + FRM_NUM_ARGS(f));
+    assert(param <= rootparam + 1 + F_NUM_ARGS(f));
 
     DECLARE_LOCAL (label);
-    if (not f->opt_label)
+    if (not f_opt_label)
         Init_Blank(label);
     else
-        Init_Word(label, f->opt_label);
+        Init_Word(label, f_opt_label);
 
     DECLARE_LOCAL (param_name);
     Init_Word(param_name, VAL_PARAM_SPELLING(param));
 
-    REBVAL *arg = FRM_ARG(f, param - rootparam);
+    REBVAL *arg = F_ARG_N(f, param - rootparam);
     if (IS_NULLED(arg))
         return Error_Arg_Required_Raw(label, param_name);
 
@@ -1141,7 +1141,7 @@ REBCTX *Error_Arg_Type(
     DECLARE_LOCAL (label);
     Get_Frame_Label_Or_Blank(label, f);
 
-    if (FRM_PHASE(f) != f->original) {
+    if (F_PHASE(f) != f_original) {
         //
         // When RESKIN has been used, or if an ADAPT messes up a type and
         // it isn't allowed by an inner phase, then it causes an error.  But

@@ -259,7 +259,7 @@ static void cleanup(const REBVAL *val)
 // simple COMPILE for just that one function, using default options.
 //
 REB_R Pending_Native_Dispatcher(REBFRM *f) {
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     assert(ACT_DISPATCHER(phase) == &Pending_Native_Dispatcher);
 
     REBVAL *action = ACT_ARCHETYPE(phase); // this action's value

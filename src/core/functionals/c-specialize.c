@@ -28,7 +28,7 @@
 // The method used is to store a FRAME! in the specialization's ACT_DETAILS().
 // Any of those items that have ARG_MARKED_CHECKED are copied from that
 // frame instead of gathered from the callsite.  Action_Executor() heeds this
-// when walking parameters (see `f->special`).
+// when walking parameters (see `f_special`).
 //
 // Code is shared between the SPECIALIZE native and specialization of a
 // GET-PATH! via refinements, such as `adp: :append/dup/part`.  However,
@@ -532,19 +532,19 @@ bool Specialize_Action_Throws(
 //
 // The evaluator does not do any special "running" of a specialized frame.
 // All of the contribution that the specialization had to make was taken care
-// of when Eval_Core() used f->special to fill from the exemplar.  So all this
+// of when Eval_Core() used f_special to fill from the exemplar.  So all this
 // does is change the phase and binding to match the function this layer was
 // specializing.
 //
 REB_R Specializer_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
 
     REBVAL *exemplar = SPECIFIC(ARR_HEAD(details));
     assert(IS_FRAME(exemplar));
 
-    INIT_FRM_PHASE(f, VAL_PHASE(exemplar));
-    FRM_BINDING(f) = VAL_BINDING(exemplar);
+    INIT_F_PHASE(f, VAL_PHASE(exemplar));
+    F_BINDING(f) = VAL_BINDING(exemplar);
 
     return R_REDO_UNCHECKED; // redo uses the updated phase and binding
 }
@@ -805,7 +805,7 @@ REBVAL *First_Unspecialized_Param(REBACT *act)
 //
 REBVAL *First_Unspecialized_Arg(REBVAL **opt_param_out, REBFRM *f)
 {
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBVAL *param = First_Unspecialized_Param(phase);
     if (opt_param_out)
         *opt_param_out = param;
@@ -814,7 +814,7 @@ REBVAL *First_Unspecialized_Arg(REBVAL **opt_param_out, REBFRM *f)
         return nullptr;
 
     REBLEN index = param - ACT_PARAMS_HEAD(phase);
-    return FRM_ARGS_HEAD(f) + index;
+    return F_ARGS_HEAD(f) + index;
 }
 
 
@@ -850,7 +850,7 @@ bool Make_Invocation_Frame_Throws(
     SET_EVAL_FLAG(f, FULFILL_ONLY);
     SET_EVAL_FLAG(f, ERROR_ON_DEFERRED_ENFIX);  // can't allow ELSE/THEN/etc.
 
-    assert(FRM_BINDING(f) == VAL_BINDING(action));  // no invoke to change it
+    assert(F_BINDING(f) == VAL_BINDING(action));  // no invoke to change it
 
     bool threw = Eval_Throws(f);
 
@@ -862,8 +862,8 @@ bool Make_Invocation_Frame_Throws(
     // Drop_Action() clears out the phase and binding.  Put them back.
     // !!! Should it check EVAL_FLAG_FULFILL_ONLY?
 
-    INIT_FRM_PHASE(f, VAL_ACTION(action));
-    FRM_BINDING(f) = VAL_BINDING(action);
+    INIT_F_PHASE(f, VAL_ACTION(action));
+    F_BINDING(f) = VAL_BINDING(action);
 
     // The function did not actually execute, so no SPC(f) was never handed
     // out...the varlist should never have gotten managed.  So this context
@@ -949,7 +949,7 @@ bool Make_Frame_From_Varargs_Throws(
     REBACT *act = VAL_ACTION(action);
 
     assert(NOT_SERIES_FLAG(f->varlist, MANAGED)); // not invoked yet
-    assert(FRM_BINDING(f) == VAL_BINDING(action));
+    assert(F_BINDING(f) == VAL_BINDING(action));
 
     REBCTX *exemplar = Steal_Context_Vars(CTX(f->varlist), NOD(act));
     assert(ACT_NUM_PARAMS(act) == CTX_LEN(exemplar));

@@ -334,7 +334,7 @@ static const REBVAL *Unloaded_Dispatcher(REBFRM *f)
 {
     UNUSED(f);
 
-    fail (Error_Native_Unloaded_Raw(ACT_ARCHETYPE(FRM_PHASE(f))));
+    fail (Error_Native_Unloaded_Raw(ACT_ARCHETYPE(F_PHASE(f))));
 }
 
 

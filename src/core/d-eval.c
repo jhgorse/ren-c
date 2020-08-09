@@ -79,7 +79,7 @@ void Dump_Frame_Location(const RELVAL *v, REBFRM *f)
 
         printf("Dump_Frame_Location() rest\n");
 
-        if (FRM_IS_VARIADIC(f)) {
+        if (F_IS_VARIADIC(f)) {
             //
             // NOTE: This reifies the va_list in the frame, which should not
             // affect procssing.  But it is a side-effect and may need to be
@@ -145,15 +145,9 @@ static void Eval_Core_Shared_Checks_Debug(REBFRM *f) {
     //
     assert(TG_Num_Black_Series == 0);
 
-    // We only have a label if we are in the middle of running a function,
-    // and if we're not running a function then f->original should be null.
-    //
-    assert(IS_POINTER_TRASH_DEBUG(f->original));
-    assert(IS_POINTER_TRASH_DEBUG(f->opt_label));
-
     if (f->varlist) {
         //
-        // !!! Drop_Action() will leave f->varlist as unmanaged, f->original
+        // !!! Drop_Action() will leave f->varlist as unmanaged, f_original
         // will be nullptr.  But calling Context_For_Frame_May_Manage() will
         // give non-action frames a managed varlist.  Review.
         //
@@ -218,16 +212,16 @@ void Eval_Core_Expression_Checks_Debug(REBFRM *f)
 
     // Trash fields that GC won't be seeing unless Is_Action_Frame()
     //
-    TRASH_POINTER_IF_DEBUG(f->param);
-    TRASH_POINTER_IF_DEBUG(f->arg);
-    TRASH_POINTER_IF_DEBUG(f->special);
+    TRASH_POINTER_IF_DEBUG(f_param);
+    TRASH_POINTER_IF_DEBUG(f_arg);
+    TRASH_POINTER_IF_DEBUG(f_special);
 
     assert(not f->varlist or NOT_SERIES_INFO(f->varlist, INACCESSIBLE));
 
     // Mutate va_list sources into arrays at fairly random moments in the
     // debug build.  It should be able to handle it at any time.
     //
-    if (FRM_IS_VARIADIC(f) and SPORADICALLY(50)) {
+    if (F_IS_VARIADIC(f) and SPORADICALLY(50)) {
         const bool truncated = true;
         Reify_Va_To_Array_In_Frame(f, truncated);
     }
@@ -242,7 +236,7 @@ void Eval_Core_Exit_Checks_Debug(REBFRM *f) {
 
     SHORTHAND (next, f->feed->value, NEVERNULL(const RELVAL*));
 
-    if (NOT_END(*next) and not FRM_IS_VARIADIC(f)) {
+    if (NOT_END(*next) and not F_IS_VARIADIC(f)) {
         if (f->feed->index > ARR_LEN(f->feed->array)) {
             assert(
                 (f->feed->pending and IS_END(f->feed->pending))

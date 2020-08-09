@@ -160,7 +160,7 @@ REBCTX *Get_Context_From_Stack(void)
         if (not Is_Action_Frame(f))
             continue;
 
-        phase = FRM_PHASE(f);
+        phase = F_PHASE(f);
         break;
     }
 

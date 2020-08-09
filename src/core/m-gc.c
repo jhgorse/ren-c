@@ -404,7 +404,7 @@ void Reify_Va_To_Array_In_Frame(
 ) {
     REBDSP dsp_orig = DSP;
 
-    assert(FRM_IS_VARIADIC(f));
+    assert(F_IS_VARIADIC(f));
 
     if (truncated) {
         DS_PUSH();
@@ -672,7 +672,7 @@ static void Mark_Guarded_Nodes(void)
 //
 // If a function is running, then this will keep the function itself live,
 // as well as the arguments.  Since argument slots are not pre-initialized,
-// how far the function has gotten in its fulfillment (f->param, f->arg, etc.)
+// how far the function has gotten in its fulfillment (f_param, f_arg, etc.)
 // must be taken into account.  Only arguments that fulfillment has reached
 // have initialized bits that it makes sense to GC protect.
 //
@@ -742,7 +742,7 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
         //
         // !!! The only way non-action frames get varlists is the
         // Context_For_Frame_May_Manage() routine, always managed.  But...
-        // for some reason the f->original can be null for a normal varlist
+        // for some reason the f_original can be null for a normal varlist
         // and still wind up here.  Review why.
         //
         if (f->varlist and GET_SERIES_FLAG(f->varlist, MANAGED))
@@ -751,17 +751,17 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
         return;  // ...so other pointers might be uninitialized
     }
 
-    Queue_Mark_Node_Deep(f->original);  // never nullptr
+    Queue_Mark_Node_Deep(f_original);  // never nullptr
 
-    if (f->opt_label)
-        Queue_Mark_Node_Deep(f->opt_label);  // nullptr if anonymous
+    if (f_opt_label)
+        Queue_Mark_Node_Deep(f_opt_label);  // nullptr if anonymous
 
     // special can be used to GC protect an arbitrary value while a function
     // is running, currently.  nullptr is permitted as well (e.g. path frames
     // use nullptr to indicate no set value on a path)
     //
-    if (f->special)
-        Queue_Mark_Opt_End_Cell_Deep(f->special);
+    if (f_special)
+        Queue_Mark_Opt_End_Cell_Deep(f_special);
 
     if (f->varlist and GET_SERIES_FLAG(f->varlist, MANAGED)) {
         //
@@ -770,8 +770,8 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
         // partial parameter traversal.
         //
         assert(
-            f->special == f->arg  // just typechecking
-            or IS_END(f->param)  // or all done
+            f_special == f_arg  // just typechecking
+            or IS_END(f_param)  // or all done
         );
         Queue_Mark_Node_Deep(CTX(f->varlist));
         return;
@@ -791,8 +791,8 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
     // in-progress arg fulfillment, but in that case it is protected by the
     // *evaluating frame's f->out* (!)
 
-    bool typechecking = (f->special == f->arg);
-    bool fulfilling = NOT_END(f->param) and not typechecking;
+    bool typechecking = (f_special == f_arg);
+    bool fulfilling = NOT_END(f_param) and not typechecking;
 
     // BUT if the frame is in its "initial entry" and fulfilling, we have not
     // started formatting cells at all yet.  Skip marking args.
@@ -800,22 +800,22 @@ static void Queue_Mark_Frame_And_Priors(REBFRM *f) {
     if (fulfilling and STATE_BYTE(f) == 0)
         return;
 
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBVAL *param = ACT_PARAMS_HEAD(phase);
 
     REBVAL *arg;
-    for (arg = FRM_ARGS_HEAD(f); NOT_END(param); ++param, ++arg) {
+    for (arg = F_ARGS_HEAD(f); NOT_END(param); ++param, ++arg) {
         if (fulfilling) {
             //
             // If we're not doing "pickups" then this cell slot and all the
             // ones after have not been initialized, not even to trash.
             // (pickups happen after all the args have been visited).
             //
-            if (param == f->param + 1 and NOT_EVAL_FLAG(f, DOING_PICKUPS))
+            if (param == f_param + 1 and NOT_EVAL_FLAG(f, DOING_PICKUPS))
                 break;
         }
 
-        assert(NOT_END(arg) or (fulfilling and arg == f->arg));
+        assert(NOT_END(arg) or (fulfilling and arg == f_arg));
         Queue_Mark_Opt_End_Cell_Deep(arg);
     }
 }

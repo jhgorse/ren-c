@@ -268,8 +268,8 @@ inline static REBCTX *VAL_WORD_CONTEXT(const REBVAL *v) {
     REBNOD *binding = VAL_BINDING(v);
     assert(
         GET_SERIES_FLAG(binding, MANAGED)
-        or IS_END(FRM(LINK_KEYSOURCE(binding))->param)  // not "fulfilling"
-    );
+        or IS_END(FRM(LINK_KEYSOURCE(binding))->u.action.param)
+    );  // not "fulfilling" --^
     binding->header.bits |= NODE_FLAG_MANAGED;  // !!! review managing needs
     REBCTX *c = CTX(binding);
     FAIL_IF_INACCESSIBLE_CTX(c);

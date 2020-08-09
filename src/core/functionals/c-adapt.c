@@ -65,7 +65,7 @@ REB_R Adapter_Dispatcher(REBFRM *f)
         ST_ADAPTER_RUNNING_PRELUDE
     };
 
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_ADAPTER_MAX);
 
     switch (STATE_BYTE(f)) {
@@ -94,8 +94,8 @@ REB_R Adapter_Dispatcher(REBFRM *f)
     // if it thought there was typechecking but got unexpected bits).
 
     RELVAL* adaptee = ARR_AT(details, IDX_ADAPTER_ADAPTEE);
-    INIT_FRM_PHASE(f, VAL_ACTION(adaptee));
-    FRM_BINDING(f) = VAL_BINDING(adaptee);
+    INIT_F_PHASE(f, VAL_ACTION(adaptee));
+    F_BINDING(f) = VAL_BINDING(adaptee);
 
     return R_REDO_CHECKED;  // the redo will use the updated phase & binding
   }

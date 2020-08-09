@@ -81,7 +81,7 @@ enum {
 //
 REB_R Encloser_Dispatcher(REBFRM *f)
 {
-    REBARR *details = ACT_DETAILS(FRM_PHASE(f));
+    REBARR *details = ACT_DETAILS(F_PHASE(f));
     assert(ARR_LEN(details) == IDX_ENCLOSER_MAX);
 
     REBVAL *inner = SPECIFIC(ARR_AT(details, IDX_ENCLOSER_INNER));
@@ -94,7 +94,7 @@ REB_R Encloser_Dispatcher(REBFRM *f)
     // call to the encloser.  If it isn't managed, there's no worries about
     // user handles on it...so just take it.  Otherwise, "steal" its vars.
     //
-    REBCTX *c = Steal_Context_Vars(CTX(f->varlist), NOD(FRM_PHASE(f)));
+    REBCTX *c = Steal_Context_Vars(CTX(f->varlist), NOD(F_PHASE(f)));
     INIT_LINK_KEYSOURCE(c, NOD(VAL_ACTION(inner)));
 
     assert(GET_SERIES_INFO(f->varlist, INACCESSIBLE));  // look dead

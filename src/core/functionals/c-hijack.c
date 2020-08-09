@@ -85,7 +85,7 @@ enum {
 //
 bool Redo_Action_Throws(REBVAL *out, REBFRM *f, REBACT *run)
 {
-    REBARR *code_arr = Make_Array(FRM_NUM_ARGS(f)); // max, e.g. no refines
+    REBARR *code_arr = Make_Array(F_NUM_ARGS(f)); // max, e.g. no refines
     RELVAL *code = ARR_HEAD(code_arr);
 
     // !!! For the moment, if refinements are needed we generate a PATH! with
@@ -97,33 +97,33 @@ bool Redo_Action_Throws(REBVAL *out, REBFRM *f, REBACT *run)
     REBDSP dsp_orig = DSP; // we push refinements as we find them
     Move_Value(DS_PUSH(), ACT_ARCHETYPE(run)); // !!! Review: binding?
 
-    assert(IS_END(f->param)); // okay to reuse, if it gets put back...
-    f->param = ACT_PARAMS_HEAD(FRM_PHASE(f));
-    f->arg = FRM_ARGS_HEAD(f);
-    f->special = ACT_SPECIALTY_HEAD(FRM_PHASE(f));
+    assert(IS_END(f_param)); // okay to reuse, if it gets put back...
+    f_param = ACT_PARAMS_HEAD(F_PHASE(f));
+    f_arg = F_ARGS_HEAD(f);
+    f_special = ACT_SPECIALTY_HEAD(F_PHASE(f));
 
-    for (; NOT_END(f->param); ++f->param, ++f->arg, ++f->special) {
-        if (Is_Param_Hidden(f->param)) {  // specialized-out parameter
-            assert(GET_CELL_FLAG(f->special, ARG_MARKED_CHECKED));
+    for (; NOT_END(f_param); ++f_param, ++f_arg, ++f_special) {
+        if (Is_Param_Hidden(f_param)) {  // specialized-out parameter
+            assert(GET_CELL_FLAG(f_special, ARG_MARKED_CHECKED));
             continue;
         }
 
-        Reb_Param_Class pclass = VAL_PARAM_CLASS(f->param);
+        Reb_Param_Class pclass = VAL_PARAM_CLASS(f_param);
 
         if (pclass == REB_P_LOCAL)
              continue;  // don't add a callsite expression for it (can't)!
 
-        if (TYPE_CHECK(f->param, REB_TS_SKIPPABLE) and IS_NULLED(f->arg))
+        if (TYPE_CHECK(f_param, REB_TS_SKIPPABLE) and IS_NULLED(f_arg))
             continue;  // don't throw in skippable args that are nulled out
 
-        if (TYPE_CHECK(f->param, REB_TS_REFINEMENT)) {
-            if (IS_NULLED(f->arg))  // don't add to PATH!
+        if (TYPE_CHECK(f_param, REB_TS_REFINEMENT)) {
+            if (IS_NULLED(f_arg))  // don't add to PATH!
                 continue;
 
-            Init_Word(DS_PUSH(), VAL_PARAM_SPELLING(f->param));
+            Init_Word(DS_PUSH(), VAL_PARAM_SPELLING(f_param));
 
-            if (Is_Typeset_Invisible(f->param)) {
-                assert(IS_REFINEMENT(f->arg));  // used but argless refinement
+            if (Is_Typeset_Invisible(f_param)) {
+                assert(IS_REFINEMENT(f_arg));  // used but argless refinement
                 continue;
             }
         }
@@ -135,7 +135,7 @@ bool Redo_Action_Throws(REBVAL *out, REBFRM *f, REBACT *run)
         // another good reason this should probably be done another way.  It
         // also loses information about the const bit.
         //
-        Quotify(Move_Value(code, f->arg), 1);
+        Quotify(Move_Value(code, f_arg), 1);
         ++code;
     }
 
@@ -177,7 +177,7 @@ bool Redo_Action_Throws(REBVAL *out, REBFRM *f, REBACT *run)
 //
 REB_R Hijacker_Dispatcher(REBFRM *f)
 {
-    REBACT *phase = FRM_PHASE(f);
+    REBACT *phase = F_PHASE(f);
     REBARR *details = ACT_DETAILS(phase);
     assert(ARR_LEN(details) == IDX_HIJACKER_MAX);
 

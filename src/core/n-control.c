@@ -76,16 +76,16 @@ REB_R Brancher_Executor(REBFRM *f)
     }
 
   preprocess_branch: {
-    if (IS_GROUP(FRM_SPARE(f)) or IS_SYM_GROUP(FRM_SPARE(f))) {
-        mutable_KIND_BYTE(FRM_SPARE(f))
-            = mutable_MIRROR_BYTE(FRM_SPARE(f)) = REB_BLOCK;
+    if (IS_GROUP(F_SPARE(f)) or IS_SYM_GROUP(F_SPARE(f))) {
+        mutable_KIND_BYTE(F_SPARE(f))
+            = mutable_MIRROR_BYTE(F_SPARE(f)) = REB_BLOCK;
 
         STATE_BYTE(f) = ST_BRANCHER_PREPROCESSING_BRANCH;
         Pushed_Continuation_With_Core(
             f->out,
             f,
             0,
-            FRM_SPARE(f),
+            F_SPARE(f),
             SPECIFIED,
             END_NODE
         );
@@ -96,7 +96,7 @@ REB_R Brancher_Executor(REBFRM *f)
   }
 
   evaluate_branch: {
-    assert(IS_BLOCK(FRM_SPARE(f)));
+    assert(IS_BLOCK(F_SPARE(f)));
 
     if (not (  // ... any of the legal branch types
         IS_BLOCK(f->out)
@@ -109,9 +109,9 @@ REB_R Brancher_Executor(REBFRM *f)
         fail ("Invalid branch type produced by SYM-GROUP! redone branch");
     }
 
-    Move_Value(FRM_SPARE(f), f->out);
+    Move_Value(F_SPARE(f), f->out);
 
-    if (IS_SYM_GROUP(FRM_SPARE(f)))
+    if (IS_SYM_GROUP(F_SPARE(f)))
         goto preprocess_branch;  // !!! Allow infinite SYM-GROUP! recursion?
 
     // !!! The current intent of "delegate" only works for dispatchers that
@@ -126,7 +126,7 @@ REB_R Brancher_Executor(REBFRM *f)
         f->out,
         f,
         0,
-        FRM_SPARE(f),
+        F_SPARE(f),
         SPECIFIED,
         END_NODE
     );
@@ -717,9 +717,9 @@ REBNATIVE(match)
         f->out = SET_END(temp);
 
         f->rootvar = CTX_ARCHETYPE(CTX(f->varlist));
-        f->param = ACT_PARAMS_HEAD(VAL_ACTION(test));
-        f->arg = FRM_ARGS_HEAD(f);
-        f->special = f->arg;  // signal only type check data
+        f_param = ACT_PARAMS_HEAD(VAL_ACTION(test));
+        f_arg = F_ARGS_HEAD(f);
+        f_special = f_arg;  // signal only type check data
 
         f->flags.bits = EVAL_MASK_DEFAULT
             | EVAL_FLAG_FULLY_SPECIALIZED
@@ -1082,14 +1082,14 @@ REBNATIVE(case)
 
   initial_entry: {
     DECLARE_FRAME_AT (
-        f_cases,  // will be named "f" on later calls
+        subframe,  // will be named "f" on later calls
         ARG(cases),  // slot gets reused for `predicate_label`
         EVAL_MASK_DEFAULT
             | EVAL_FLAG_ALLOCATED_FEED
             | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
             | EVAL_FLAG_KEEP_STALE_BIT
     );
-    f = f_cases;
+    f = subframe;
 
     if (IS_NULLED(predicate)) {
       #if !defined(NDEBUG)
@@ -1146,23 +1146,23 @@ REBNATIVE(case)
         goto reached_end;
     }
 
-    if (IS_END(F_VALUE(f)))
+    if (IS_END(f_value))
         goto reached_end;
 
     if (not IS_TRUTHY(D_OUT)) {
         if (
-            IS_BLOCK(F_VALUE(f))
-            or IS_ACTION(F_VALUE(f))
-            or IS_QUOTED(F_VALUE(f))
-            or IS_SYM_WORD(F_VALUE(f))
-            or IS_SYM_PATH(F_VALUE(f))
-            or IS_SYM_GROUP(F_VALUE(f))
+            IS_BLOCK(f_value)
+            or IS_ACTION(f_value)
+            or IS_QUOTED(f_value)
+            or IS_SYM_WORD(f_value)
+            or IS_SYM_PATH(f_value)
+            or IS_SYM_GROUP(f_value)
         ){
             // Acceptable "branches" (e.g. for IF), just skipped on no match
             //
             Fetch_Next_Forget_Lookback(f);
         }
-        else if (IS_GROUP(F_VALUE(f))) {
+        else if (IS_GROUP(f_value)) {
             //
             // IF evaluates branches that are GROUP! even if it does not
             // run them.  This implies CASE should too.
@@ -1182,7 +1182,7 @@ REBNATIVE(case)
             // >> if false <some-tag>
             // ** Script Error: if does not allow tag! for its branch...
             //
-            fail (Error_Bad_Value_Core(F_VALUE(f), F_SPECIFIER(f)));
+            fail (Error_Bad_Value_Core(f_value, f_specifier));
         }
 
         goto evaluate_new_condition;
@@ -1204,15 +1204,15 @@ REBNATIVE(case)
         D_OUT,
         f,
         0,  // don't delegate, don't catch throws
-        F_VALUE(f),  // branch
-        F_SPECIFIER(f),  // branch_specifier
+        f_value,  // branch
+        f_specifier,  // branch_specifier
         END_NODE  // with
     );
-    if (subframe) {
-        D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
-        return R_CONTINUATION;
-    }
-    goto branch_was_evaluated;
+    if (not subframe)  // was a quoted branch, or otherwise no frame needed
+        goto branch_was_evaluated;  // D_OUT was set easily
+
+    D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
+    return R_CONTINUATION;
   }
 
   branch_was_evaluated: {

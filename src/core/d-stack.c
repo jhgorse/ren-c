@@ -93,7 +93,7 @@ REBVAL *Init_Near_For_Frame(RELVAL *out, REBFRM *f)
 {
     REBLEN dsp_start = DSP;
 
-    if (NOT_END(f->feed->value) and FRM_IS_VARIADIC(f)) {
+    if (NOT_END(f->feed->value) and F_IS_VARIADIC(f)) {
         //
         // Traversing a C va_arg, so reify into a (truncated) array.
         //
@@ -110,19 +110,19 @@ REBVAL *Init_Near_For_Frame(RELVAL *out, REBFRM *f)
     // for the currently executing function.  Reconsider when such cases
     // appear and can be studied.
 
-    REBINT start = FRM_INDEX(f) - 3;
+    REBINT start = F_INDEX(f) - 3;
     if (start > 0)
         Init_Word(DS_PUSH(), Canon(SYM_ELLIPSIS));
     else if (start < 0)
         start = 0;
 
     REBLEN count = 0;
-    RELVAL *item = ARR_AT(FRM_ARRAY(f), start);
+    RELVAL *item = ARR_AT(F_ARRAY(f), start);
     for (; NOT_END(item) and count < 6; ++item, ++count) {
         assert(not IS_NULLED(item));  // can't be in arrays, API won't splice
         Derelativize(DS_PUSH(), item, f->feed->specifier);
 
-        if (count == FRM_INDEX(f) - start - 1) {
+        if (count == F_INDEX(f) - start - 1) {
             //
             // Leave a marker at the point of the error, currently `~~`.
             //
