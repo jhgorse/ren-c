@@ -1442,6 +1442,8 @@ REB_R PD_Struct(
             Move_Value(sel_orig, picker);
             PUSH_GC_GUARD(sel_orig);
 
+            fail ("Next_Path_Throws() has no replacement yet.");
+            /*
             if (Next_Path_Throws(pvs)) { // updates pvs->out, PVS_PICKER()
                 DROP_GC_GUARD(sel_orig);
                 fail (Error_No_Catch_For_Throw(pvs->out)); // !!! Review
@@ -1463,6 +1465,7 @@ REB_R PD_Struct(
             DROP_GC_GUARD(sel_orig);
 
             return R_INVISIBLE;
+            */
         }
 
         return pvs->out;

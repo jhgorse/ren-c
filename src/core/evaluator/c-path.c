@@ -30,22 +30,362 @@
 //
 //  Path_Executor: C
 //
-// !!! Work in progress.  Currently paths do not use the executor, they are
-// stackful.  So for now this just identifies a path frame, and allows errors
-// on them to be passed through.
-//
 REB_R Path_Executor(REBFRM *f)
 {
-    // Right now the only thing the Path_Executor is set up to do is to
-    // propagate throws/errors (which all executors must be able to do)
+    if (GET_EVAL_FLAG(f, ABRUPT_FAILURE))  // fail() from in this executor
+        return R_THROWN;  // just pass it up
 
-    assert(Is_Throwing(f));
+    enum {
+        ST_PATH_INITIAL_ENTRY = 0,
+        ST_PATH_FIRST_GROUP_EVALUATING,
+        ST_PATH_PICKER_GROUP_EVALUATING
+    };
 
-    if (f->out != f->prior->out)
-        Move_Value(f->prior->out, f->out);
+    switch (STATE_BYTE(f)) {
+      case ST_PATH_INITIAL_ENTRY: goto initial_entry;
+      case ST_PATH_FIRST_GROUP_EVALUATING: goto out_preloaded;
+      case ST_PATH_PICKER_GROUP_EVALUATING: goto picker_ready;      
+      default: assert(false);
+    }
 
-    TRASH_POINTER_IF_DEBUG(f_opt_label);  // !!! an assert checks--review
-    return R_THROWN;
+  initial_entry: {
+    assert(
+        not PVS_OPT_SETVAL(f)
+        or not IN_DATA_STACK_DEBUG(PVS_OPT_SETVAL(f))
+            // ^-- evaluation might relocate it
+    );
+    assert(f->out != PVS_OPT_SETVAL(f) and f->out != PVS_PICKER(f));
+
+    // !!! For now, we allow `/a` to act as a GET of A and `/a:` to act as
+    // a SET of A.  Review semantics.
+    //
+    while (NOT_END(f_value) and IS_BLANK(f_value))
+        Fetch_Next_Forget_Lookback(f);
+
+    // Seed the path evaluation process by looking up the first item (to
+    // get a datatype to dispatch on for the later path items)
+    //
+    if (IS_WORD(f_value)) {
+        //
+        // Remember the actual location of this variable, not just its value,
+        // in case we need to do R_IMMEDIATE writeback (e.g. month/day: 1)
+        //
+        f->u.path.ref = Lookup_Mutable_Word_May_Fail(f_value, f_specifier);
+        f->u.path.ref_specifier = SPECIFIED;
+
+        Move_Value(f->out, SPECIFIC(f->u.path.ref));
+
+        if (IS_ACTION(f->out))
+            PVS_OPT_LABEL(f) = VAL_WORD_SPELLING(f_value);
+    }
+    else if (
+        IS_GROUP(f_value)
+        and NOT_EVAL_FLAG(f, PATH_HARD_QUOTE)  // not precomposed
+    ){
+        if (GET_EVAL_FLAG(f, NO_PATH_GROUPS))
+            fail ("GROUP! in PATH! used with GET or SET (use REDUCE/EVAL)");
+
+        f->u.path.ref = nullptr;  // nowhere to R_IMMEDIATE write back to
+
+        DECLARE_FRAME_AT_CORE (
+            blockframe,
+            f_value,
+            f_specifier,
+            EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END
+        );
+
+        Init_Void(f->out);  // in case all invisibles, as usual
+        Push_Frame(f->out, blockframe);
+        INIT_F_EXECUTOR(blockframe, &Evaluator_Executor);
+
+        STATE_BYTE(f) = ST_PATH_FIRST_GROUP_EVALUATING;  // => first_is_in_out
+        return R_CONTINUATION;
+    }
+    else {
+        f->u.path.ref = nullptr;  // nowhere to R_IMMEDIATE write back to
+        Derelativize(f->out, f_value, f_specifier);
+    }
+    goto out_preloaded;
+  }
+
+  out_preloaded: {
+    if (Is_Throwing(f)) {
+        TRASH_POINTER_IF_DEBUG(f_opt_label);  // !!! an assert checks--review
+        return R_THROWN;
+    }
+
+    const RELVAL *lookback;
+    lookback = Lookback_While_Fetching_Next(f);
+
+    // !!! For the moment, we allow /foo to fetch foo normally.
+    //
+    if (IS_END(f_value)) {
+        if (PVS_OPT_SETVAL(f)) {
+            if (not f->u.path.ref)
+                fail ("Can't set immediate location");
+            Move_Value(f->u.path.ref, PVS_OPT_SETVAL(f));
+        }
+        goto finished;
+    }
+
+    // !!! NULL pickers are legal for those pathers that can take it, but
+    // not for the output cell if not at the end.  (Could this be folded in
+    // with general null dispatch and still give a good error on the partial
+    // path so far?)
+    //
+    if (IS_NULLED(f->out))
+        fail (Error_No_Value_Core(lookback, f_specifier));
+
+    goto next_picker;
+  }
+
+  next_picker: {
+    if (IS_GET_WORD(f_value)) {  // e.g. object/:field
+        Get_Word_May_Fail(PVS_PICKER(f), f_value, f_specifier);
+    }
+    else if (
+        IS_GROUP(f_value)  // object/(expr) case:
+        and NOT_EVAL_FLAG(f, PATH_HARD_QUOTE)  // not precomposed
+    ){
+        if (GET_EVAL_FLAG(f, NO_PATH_GROUPS))
+            fail ("GROUP! in PATH! used with GET or SET (use REDUCE/EVAL)");
+
+        DECLARE_FRAME_AT_CORE (
+            blockframe,
+            f_value,
+            f_specifier,
+            EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END
+        );
+
+        Init_Void(PVS_PICKER(f));  // in case all invisibles, as usual
+        Push_Frame(PVS_PICKER(f), blockframe);
+        INIT_F_EXECUTOR(blockframe, &Evaluator_Executor);
+
+        STATE_BYTE(f) = ST_PATH_PICKER_GROUP_EVALUATING;  // => picker_ready
+        return R_CONTINUATION;
+    }
+    else { // object/word and object/value case:
+        Derelativize(PVS_PICKER(f), f_value, f_specifier);
+    }
+
+    goto picker_ready;
+  }
+
+  picker_ready: {
+    Fetch_Next_Forget_Lookback(f);
+
+    // Note: NULLED "pickers" are accepted by some "pathers" (e.g. ACTION!
+    // allows you to opt out of refinements this way)
+  }
+
+  pick_or_poke: {
+    if (Is_Throwing(f)) {
+        TRASH_POINTER_IF_DEBUG(f_opt_label);  // !!! an assert checks--review
+        Move_Value(f->out, PVS_PICKER(f));  // eval was into out
+        return R_THROWN;
+    }
+
+    bool was_custom = (KIND_BYTE(f->out) == REB_CUSTOM);  // !!! for hack
+    PATH_HOOK *hook = Path_Hook_For_Type_Of(f->out);
+
+    if (IS_END(f_value) and PVS_IS_SET_PATH(f)) {  // poke
+        const REBVAL *r = hook(f, PVS_PICKER(f), PVS_OPT_SETVAL(f));
+
+        switch (KIND_BYTE(r)) {
+          case REB_0_END:  // unhandled
+            assert(r == R_UNHANDLED);  // shouldn't be other ends
+            fail (Error_Bad_Path_Poke_Raw(PVS_PICKER(f)));
+
+          case REB_R_THROWN:
+            panic ("Path dispatch isn't allowed to throw, only GROUP!s");
+
+          case REB_R_INVISIBLE:  // dispatcher assigned target with opt_setval
+            break;  // nothing left to do, have to take the dispatcher's word
+
+          case REB_R_REFERENCE:  { // dispatcher wants set *if* at end of path
+            Move_Value(f->u.path.ref, PVS_OPT_SETVAL(f));
+            break; }
+
+          case REB_R_IMMEDIATE: {
+            //
+            // Imagine something like:
+            //
+            //      month/year: 1
+            //
+            // First month is written into the out slot as a reference to the
+            // location of the month DATE! variable.  But because we don't
+            // pass references from the previous steps *in* to the path
+            // picking material, it only has the copied value in pvs->out.
+            //
+            // If we had a reference before we called in, we saved it in
+            // pvs->u.ref.  So in the example case of `month/year:`, that
+            // would be the CTX_VAR() where month was found initially, and so
+            // we write the updated bits from pvs->out there.
+
+            if (not f->u.path.ref)
+                fail ("Can't update temporary immediate value via SET-PATH!");
+
+            Move_Value(f->u.path.ref, f->out);
+            break; }
+
+          case REB_R_REDO: // e.g. used by REB_QUOTED to retrigger, sometimes
+            goto pick_or_poke;
+
+          default:
+            //
+            // Something like a generic D_OUT.  We could in theory take those
+            // to just be variations of R_IMMEDIATE, but it's safer to break
+            // that out as a separate class.
+            //
+            fail ("Path evaluation produced temporary value, can't POKE it");
+        }
+        TRASH_POINTER_IF_DEBUG(PVS_OPT_SETVAL(f));
+    }
+    else {  // pick
+        f->u.path.ref = nullptr;  // clear status of the reference
+
+        const REBVAL *r = hook(f, PVS_PICKER(f), nullptr);  // no "setval"
+
+        if (r and r != END_NODE) {
+            assert(r->header.bits & NODE_FLAG_CELL);
+            /* assert(not (r->header.bits & NODE_FLAG_ROOT)); */
+        }
+
+        if (r == f->out) {
+            // Common case... result where we expect it
+        }
+        else if (not r) {
+            Init_Nulled(f->out);
+        }
+        else if (r == R_UNHANDLED) {
+            if (IS_NULLED(PVS_PICKER(f)))
+                fail ("NULL used in path picking but was not handled");
+
+            fail (Error_Bad_Path_Pick_Raw(PVS_PICKER(f)));
+        }
+        else if (GET_CELL_FLAG(r, ROOT)) { // API, from Alloc_Value()
+            Handle_Api_Dispatcher_Result(f, r);
+        }
+        else switch (KIND_BYTE(r)) {
+          case REB_R_THROWN:
+            panic ("Path dispatch isn't allowed to throw, only GROUP!s");
+
+          case REB_R_INVISIBLE:
+            assert(PVS_IS_SET_PATH(f));
+            if (not was_custom)
+                panic("SET-PATH! evaluation ran assignment before path end");
+
+            // !!! All REB_CUSTOM types do not do this check at the moment
+            // But the exemption was made for STRUCT! and GOB!, due to the
+            // dispatcher hack to do "sub-value addressing" is to call
+            // Next_Path_Throws inside of them, to be able to do a write
+            // while they still have memory of what the struct and variable
+            // are (which would be lost in this protocol otherwise).
+            //
+            assert(IS_END(f_value));
+            break;
+
+          case REB_R_REFERENCE: {
+            bool was_const = GET_CELL_FLAG(f->out, CONST);
+            Derelativize(
+                f->out,
+                f->u.path.ref,
+                f->u.path.ref_specifier
+            );
+            if (was_const)  // can't Inherit_Const(), would overwrite flag
+                SET_CELL_FLAG(f->out, CONST);
+
+            // Leave the f->u.ref as-is in case the next update turns out
+            // to be R_IMMEDIATE, and it is needed.
+            break; }
+
+          case REB_R_REDO:  // e.g. used by REB_QUOTED to retrigger, sometimes
+            goto pick_or_poke;
+
+          default:
+            panic ("REB_R value not supported for path dispatch");
+        }
+    }
+
+    // A function being refined does not actually update pvs->out with
+    // a "more refined" function value, it holds the original function and
+    // accumulates refinement state on the stack.  The label should only
+    // be captured the first time the function is seen, otherwise it would
+    // capture the last refinement's name, so check label for non-NULL.
+    //
+    if (IS_ACTION(f->out) and IS_WORD(PVS_PICKER(f))) {
+        if (not PVS_OPT_LABEL(f))
+            PVS_OPT_LABEL(f) = VAL_WORD_SPELLING(PVS_PICKER(f));
+    }
+
+    if (IS_END(f_value))
+        goto finished;
+
+    goto next_picker;  // did not throw
+  }
+
+  finished: {
+    if (PVS_OPT_SETVAL(f))
+        return f->out;  // If SET we don't change output (out would be input)
+
+    if (DSP != f->baseline.dsp) {
+        //
+        // To make things easier for processing, reverse any refinements
+        // pushed as ISSUE!s (we needed to evaluate them in forward order).
+        // This way we can just pop them as we go, and know if they weren't
+        // all consumed if not back to `f->baseline.dsp` by the end.
+
+        REBVAL *bottom = DS_AT(f->baseline.dsp + 1);
+        REBVAL *top = DS_TOP;
+
+        while (top > bottom) {
+            assert(IS_SYM_WORD(bottom) and not IS_WORD_BOUND(bottom));
+            assert(IS_SYM_WORD(top) and not IS_WORD_BOUND(top));
+
+            // It's faster to just swap the spellings.  (If binding
+            // mattered, we'd need to swap the whole cells).
+            //
+            REBSTR *temp = VAL_WORD_SPELLING(bottom);
+            INIT_VAL_NODE(bottom, VAL_WORD_SPELLING(top));
+            INIT_VAL_NODE(top, temp);
+
+            top--;
+            bottom++;
+        }
+
+        assert(IS_ACTION(f->out));
+
+        if (GET_EVAL_FLAG(f, PUSH_PATH_REFINES)) {
+            //
+            // The caller knows how to handle the refinements-pushed-to-stack
+            // in-reverse-order protocol, and doesn't want to pay for making
+            // a new ACTION!.
+        }
+        else {
+            // The caller actually wants an ACTION! value to store or use
+            // for later, as opposed to just calling it once.  It costs a
+            // bit to do this, but unlike in R3-Alpha, it's possible to do!
+            //
+            // Code for specialization via refinement order works from the
+            // data stack.  (It can't use direct value pointers because it
+            // pushes to the stack itself, hence may move it on expansion.)
+            //
+            if (Specialize_Action_Throws(
+                PVS_PICKER(f),
+                f->out,
+                PVS_OPT_LABEL(f),
+                nullptr,  // opt_def
+                f->baseline.dsp  // first_refine_dsp
+            )){
+                panic ("REFINE-only specializations should not THROW");
+            }
+
+            Move_Value(f->out, PVS_PICKER(f));
+        }
+    }
+
+    return f->out;
+  }
 }
 
 
@@ -71,11 +411,6 @@ REBVAL *Init_Any_Path_At_Core(
 
     if (ARR_LEN(a) < 2)
         panic (a);
-
-    assert(a != PG_2_Blanks_Array);  // should always be SYM__SLASH_1_ cell
-    assert(not (  // v-- also should never be initialized like this
-        ARR_LEN(a) == 2 and IS_BLANK(ARR_AT(a, 0)) and IS_BLANK(ARR_AT(a, 1))
-    ));
 
     return SPECIFIC(out);
 }
@@ -117,189 +452,6 @@ REB_R PD_Unhooked(
     UNUSED(type); // !!! put in error message?
 
     fail ("Datatype is provided by an extension which is not loaded.");
-}
-
-
-//
-//  Next_Path_Throws: C
-//
-// Evaluate next part of a path.
-//
-// !!! This is done as a recursive function instead of iterating in a loop due
-// to the unusual nature of some path dispatches that call Next_Path_Throws()
-// inside their implementation.  Those two cases (FFI array writeback and
-// writing GOB x and y coordinates) are intended to be revisited after this
-// code gets more reorganized.
-//
-bool Next_Path_Throws(REBPVS *pvs)
-{
-    SHORTHAND (v, pvs->feed->value, NEVERNULL(const RELVAL *));
-    SHORTHAND (specifier, pvs->feed->specifier, REBSPC *);
-
-    if (IS_NULLED(pvs->out))
-        fail (Error_No_Value_Core(*v, *specifier));
-
-    if (IS_GET_WORD(*v)) {  // e.g. object/:field
-        Get_Word_May_Fail(PVS_PICKER(pvs), *v, *specifier);
-    }
-    else if (
-        IS_GROUP(*v)  // object/(expr) case:
-        and NOT_EVAL_FLAG(pvs, PATH_HARD_QUOTE)  // not precomposed
-    ){
-        if (GET_EVAL_FLAG(pvs, NO_PATH_GROUPS))
-            fail ("GROUP! in PATH! used with GET or SET (use REDUCE/EVAL)");
-
-        REBSPC *derived = Derive_Specifier(*specifier, *v);
-        if (Do_Any_Array_At_Throws(PVS_PICKER(pvs), *v, derived)) {
-            Move_Value(pvs->out, PVS_PICKER(pvs));
-            return true; // thrown
-        }
-    }
-    else { // object/word and object/value case:
-        Derelativize(PVS_PICKER(pvs), *v, *specifier);
-    }
-
-    Fetch_Next_Forget_Lookback(pvs);  // may be at end
-
-  redo:;
-
-    bool was_custom = (KIND_BYTE(pvs->out) == REB_CUSTOM);  // !!! for hack
-    PATH_HOOK *hook = Path_Hook_For_Type_Of(pvs->out);
-
-    if (IS_END(*v) and PVS_IS_SET_PATH(pvs)) {
-
-        const REBVAL *r = hook(pvs, PVS_PICKER(pvs), PVS_OPT_SETVAL(pvs));
-
-        switch (KIND_BYTE(r)) {
-          case REB_0_END: // unhandled
-            assert(r == R_UNHANDLED); // shouldn't be other ends
-            fail (Error_Bad_Path_Poke_Raw(PVS_PICKER(pvs)));
-
-          case REB_R_THROWN:
-            panic ("Path dispatch isn't allowed to throw, only GROUP!s");
-
-          case REB_R_INVISIBLE: // dispatcher assigned target with opt_setval
-            break; // nothing left to do, have to take the dispatcher's word
-
-          case REB_R_REFERENCE: { // dispatcher wants a set *if* at end of path
-            Move_Value(pvs->u.ref.cell, PVS_OPT_SETVAL(pvs));
-            break; }
-
-          case REB_R_IMMEDIATE: {
-            //
-            // Imagine something like:
-            //
-            //      month/year: 1
-            //
-            // First month is written into the out slot as a reference to the
-            // location of the month DATE! variable.  But because we don't
-            // pass references from the previous steps *in* to the path
-            // picking material, it only has the copied value in pvs->out.
-            //
-            // If we had a reference before we called in, we saved it in
-            // pvs->u.ref.  So in the example case of `month/year:`, that
-            // would be the CTX_VAR() where month was found initially, and so
-            // we write the updated bits from pvs->out there.
-
-            if (not pvs->u.ref.cell)
-                fail ("Can't update temporary immediate value via SET-PATH!");
-
-            Move_Value(pvs->u.ref.cell, pvs->out);
-            break; }
-
-          case REB_R_REDO: // e.g. used by REB_QUOTED to retrigger, sometimes
-            goto redo;
-
-          default:
-            //
-            // Something like a generic D_OUT.  We could in theory take those
-            // to just be variations of R_IMMEDIATE, but it's safer to break
-            // that out as a separate class.
-            //
-            fail ("Path evaluation produced temporary value, can't POKE it");
-        }
-        TRASH_POINTER_IF_DEBUG(PVS_OPT_SETVAL(pvs));
-    }
-    else {
-        pvs->u.ref.cell = nullptr; // clear status of the reference
-
-        const REBVAL *r = hook(pvs, PVS_PICKER(pvs), nullptr);  // no "setval"
-
-        if (r and r != END_NODE) {
-            assert(r->header.bits & NODE_FLAG_CELL);
-            /* assert(not (r->header.bits & NODE_FLAG_ROOT)); */
-        }
-
-        if (r == pvs->out) {
-            // Common case... result where we expect it
-        }
-        else if (not r) {
-            Init_Nulled(pvs->out);
-        }
-        else if (r == R_UNHANDLED) {
-            if (IS_NULLED(PVS_PICKER(pvs)))
-                fail ("NULL used in path picking but was not handled");
-            fail (Error_Bad_Path_Pick_Raw(PVS_PICKER(pvs)));
-        }
-        else if (GET_CELL_FLAG(r, ROOT)) { // API, from Alloc_Value()
-            Handle_Api_Dispatcher_Result(pvs, r);
-        }
-        else switch (KIND_BYTE(r)) {
-          case REB_R_THROWN:
-            panic ("Path dispatch isn't allowed to throw, only GROUP!s");
-
-          case REB_R_INVISIBLE:
-            assert(PVS_IS_SET_PATH(pvs));
-            if (not was_custom)
-                panic("SET-PATH! evaluation ran assignment before path end");
-
-            // !!! All REB_CUSTOM types do not do this check at the moment
-            // But the exemption was made for STRUCT! and GOB!, due to the
-            // dispatcher hack to do "sub-value addressing" is to call
-            // Next_Path_Throws inside of them, to be able to do a write
-            // while they still have memory of what the struct and variable
-            // are (which would be lost in this protocol otherwise).
-            //
-            assert(IS_END(*v));
-            break;
-
-          case REB_R_REFERENCE: {
-            bool was_const = GET_CELL_FLAG(pvs->out, CONST);
-            Derelativize(
-                pvs->out,
-                pvs->u.ref.cell,
-                pvs->u.ref.specifier
-            );
-            if (was_const) // can't Inherit_Const(), flag would be overwritten
-                SET_CELL_FLAG(pvs->out, CONST);
-
-            // Leave the pvs->u.ref as-is in case the next update turns out
-            // to be R_IMMEDIATE, and it is needed.
-            break; }
-
-          case REB_R_REDO: // e.g. used by REB_QUOTED to retrigger, sometimes
-            goto redo;
-
-          default:
-            panic ("REB_R value not supported for path dispatch");
-        }
-    }
-
-    // A function being refined does not actually update pvs->out with
-    // a "more refined" function value, it holds the original function and
-    // accumulates refinement state on the stack.  The label should only
-    // be captured the first time the function is seen, otherwise it would
-    // capture the last refinement's name, so check label for non-NULL.
-    //
-    if (IS_ACTION(pvs->out) and IS_WORD(PVS_PICKER(pvs))) {
-        if (not PVS_OPT_LABEL(pvs))
-            PVS_OPT_LABEL(pvs) = VAL_WORD_SPELLING(PVS_PICKER(pvs));
-    }
-
-    if (IS_END(*v))
-        return false; // did not throw
-
-    return Next_Path_Throws(pvs);
 }
 
 
@@ -347,170 +499,32 @@ bool Eval_Path_Throws_Core(
     DECLARE_FRAME (
         pvs,
         feed,
-        flags | EVAL_FLAG_ALLOCATED_FEED
+        flags | EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_ROOT_FRAME
     );
     INIT_F_EXECUTOR(pvs, &Path_Executor);
-
-    SHORTHAND (v, pvs->feed->value, NEVERNULL(const RELVAL*));
-    assert(NOT_END(*v));  // tested 0-length path previously
 
     SET_END(out);
     Push_Frame(out, pvs);
 
-    REBDSP dsp_orig = DSP;
-
-    assert(
-        not opt_setval
-        or not IN_DATA_STACK_DEBUG(opt_setval) // evaluation might relocate it
-    );
-    assert(out != opt_setval and out != PVS_PICKER(pvs));
-
     PVS_OPT_SETVAL(pvs) = opt_setval;
     PVS_OPT_LABEL(pvs) = nullptr;
 
-    // Seed the path evaluation process by looking up the first item (to
-    // get a datatype to dispatch on for the later path items)
-    //
-    if (IS_WORD(*v)) {
-        //
-        // Remember the actual location of this variable, not just its value,
-        // in case we need to do R_IMMEDIATE writeback (e.g. month/day: 1)
-        //
-        pvs->u.ref.cell = Lookup_Mutable_Word_May_Fail(*v, specifier);
+    if (Trampoline_Throws(pvs)) {
+        assert(Is_Throwing(pvs));
+        Abort_Frame(pvs);
 
-        Move_Value(pvs->out, SPECIFIC(pvs->u.ref.cell));
+        if (IS_ERROR(VAL_THROWN_LABEL(out)))
+            fail (Error_No_Catch_For_Throw(out));  // propagates error
 
-        if (IS_ACTION(pvs->out))
-            PVS_OPT_LABEL(pvs) = VAL_WORD_SPELLING(*v);
+        return true;  // thrown
     }
-    else if (
-        IS_GROUP(*v)
-         and NOT_EVAL_FLAG(pvs, PATH_HARD_QUOTE)  // not precomposed
-    ){
-        pvs->u.ref.cell = nullptr; // nowhere to R_IMMEDIATE write back to
+    assert(not Is_Throwing(pvs));
 
-        if (GET_EVAL_FLAG(pvs, NO_PATH_GROUPS))
-            fail ("GROUP! in PATH! used with GET or SET (use REDUCE/EVAL)");
-
-        REBSPC *derived = Derive_Specifier(specifier, *v);
-        if (Do_Any_Array_At_Throws(pvs->out, *v, derived))
-            goto return_thrown;
-    }
-    else {
-        pvs->u.ref.cell = nullptr; // nowhere to R_IMMEDIATE write back to
-
-        Derelativize(pvs->out, *v, specifier);
-    }
-
-    const RELVAL *lookback;
-    lookback = Lookback_While_Fetching_Next(pvs);
-
-    if (IS_END(*v)) {
-        //
-        // We want `set /a` and `get /a` to work.  The GET case should work
-        // with just what we loaded in pvs->out being returned (which may be
-        // null, in case it's the caller's responsibility to error).  But
-        // the SET case needs us to write back to the "reference" location.
-        //
-        if (PVS_IS_SET_PATH(pvs)) {
-            if (not pvs->u.ref.cell)
-                fail ("Can't update temporary immediate value via SET-PATH!");
-
-            // !!! When we got the cell, we got it mutable, which is bad...
-            // it means we can't use `GET /A` on immutable objects.  But if
-            // we got the cell immutably we couldn't safely write to it.
-            // Prioritize rethinking this when the feature gets used more.
-            //
-            assert(NOT_CELL_FLAG(pvs->u.ref.cell, PROTECTED));
-            Move_Value(pvs->u.ref.cell, PVS_OPT_SETVAL(pvs));
-        }
-    }
-    else {
-        if (IS_NULLED(pvs->out))
-            fail (Error_No_Value_Core(lookback, specifier));
-
-        if (Next_Path_Throws(pvs))
-            goto return_thrown;
-
-        assert(IS_END(*v));
-    }
-
-    TRASH_POINTER_IF_DEBUG(lookback);  // goto crosses it, don't use below
-
-    if (opt_setval) {
-        // If SET then we don't return anything
-        goto return_not_thrown;
-    }
-
-    if (dsp_orig != DSP) {
-        //
-        // To make things easier for processing, reverse any refinements
-        // pushed as ISSUE!s (we needed to evaluate them in forward order).
-        // This way we can just pop them as we go, and know if they weren't
-        // all consumed if not back to `dsp_orig` by the end.
-
-        REBVAL *bottom = DS_AT(dsp_orig + 1);
-        REBVAL *top = DS_TOP;
-
-        while (top > bottom) {
-            assert(IS_SYM_WORD(bottom) and not IS_WORD_BOUND(bottom));
-            assert(IS_SYM_WORD(top) and not IS_WORD_BOUND(top));
-
-            // It's faster to just swap the spellings.  (If binding
-            // mattered, we'd need to swap the whole cells).
-            //
-            REBSTR *temp = VAL_WORD_SPELLING(bottom);
-            INIT_VAL_NODE(bottom, VAL_WORD_SPELLING(top));
-            INIT_VAL_NODE(top, temp);
-
-            top--;
-            bottom++;
-        }
-
-        assert(IS_ACTION(pvs->out));
-
-        if (GET_EVAL_FLAG(pvs, PUSH_PATH_REFINES)) {
-            //
-            // The caller knows how to handle the refinements-pushed-to-stack
-            // in-reverse-order protocol, and doesn't want to pay for making
-            // a new ACTION!.
-        }
-        else {
-            // The caller actually wants an ACTION! value to store or use
-            // for later, as opposed to just calling it once.  It costs a
-            // bit to do this, but unlike in R3-Alpha, it's possible to do!
-            //
-            // Code for specialization via refinement order works from the
-            // data stack.  (It can't use direct value pointers because it
-            // pushes to the stack itself, hence may move it on expansion.)
-            //
-            if (Specialize_Action_Throws(
-                PVS_PICKER(pvs),
-                pvs->out,
-                PVS_OPT_LABEL(pvs),
-                nullptr,  // opt_def
-                dsp_orig  // first_refine_dsp
-            )){
-                panic ("REFINE-only specializations should not THROW");
-            }
-
-            Move_Value(pvs->out, PVS_PICKER(pvs));
-        }
-    }
-
-  return_not_thrown:
     if (label_out)
         *label_out = PVS_OPT_LABEL(pvs);
 
-    assert(not Is_Throwing(pvs));
-    TRASH_POINTER_IF_DEBUG(pvs->executor);  // !!! new rule for drop frame
     Drop_Frame_Unbalanced(pvs);  // refinements may accrue on stack
-    return false; // not thrown
-
-  return_thrown:
-    assert(Is_Throwing(pvs));
-    Abort_Frame(pvs);
-    return true; // thrown
+    return false;  // not thrown
 }
 
 
@@ -658,8 +672,8 @@ REBNATIVE(pick)
         bool was_const = GET_CELL_FLAG(D_OUT, CONST);
         Derelativize(
             D_OUT,
-            pvs->u.ref.cell,
-            pvs->u.ref.specifier
+            pvs->u.path.ref,
+            pvs->u.path.ref_specifier
         );
         if (was_const) // can't Inherit_Const(), flag would be overwritten
             SET_CELL_FLAG(D_OUT, CONST);
@@ -738,7 +752,7 @@ REBNATIVE(poke)
         break;
 
       case REB_R_REFERENCE:  // wants us to write it
-        Move_Value(pvs->u.ref.cell, ARG(value));
+        Move_Value(pvs->u.path.ref, ARG(value));
         break;
 
       default:

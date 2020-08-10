@@ -423,8 +423,8 @@ REB_R PD_Context(
             fail (Error_Protected_Word_Raw(picker));
     }
 
-    pvs->u.ref.cell = CTX_VAR(c, n);
-    pvs->u.ref.specifier = SPECIFIED;
+    pvs->u.path.ref = CTX_VAR(c, n);
+    pvs->u.path.ref_specifier = SPECIFIED;
     return R_REFERENCE;
 }
 

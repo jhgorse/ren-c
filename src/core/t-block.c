@@ -698,8 +698,8 @@ REB_R PD_Array(
     if (opt_setval)
         ENSURE_MUTABLE(pvs->out);
 
-    pvs->u.ref.cell = VAL_ARRAY_AT_HEAD(pvs->out, n);
-    pvs->u.ref.specifier = VAL_SPECIFIER(pvs->out);
+    pvs->u.path.ref = VAL_ARRAY_AT_HEAD(pvs->out, n);
+    pvs->u.path.ref_specifier = VAL_SPECIFIER(pvs->out);
     return R_REFERENCE;
 }
 

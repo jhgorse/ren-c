@@ -294,3 +294,32 @@
     ([#"e" #"u" #"i" #"o" #"o" #"u" #"e" #"O" #"e" #"e" #"a" #"o" _]
         = reduce [v v v v v v v v v v v v try v])
 )
+
+
+; PATH!, GET-PATH!, SET-PATH!
+[
+    (
+        twenty: func [] [return 20]
+        obj: make object! [sub: make object! [x: 10 f: :twenty]]
+        get-obj: func [] [obj]
+        true
+    )
+
+    (
+        g: generator [yield (get-obj elide yield <foo>)/(yield 'sub)/f]
+        [<foo> sub 20 _ _] == reduce [g g g try g try g]
+    )
+
+    (
+        g: generator [yield :(get-obj elide yield <foo>)/(yield 'sub)/f]
+        (compose [<foo> sub (:twenty) _ _]) == reduce [g g g try g try g]
+    )
+
+    (
+        g: generator [yield (get-obj elide yield <foo>)/(yield 'sub)/x: 1 + 2]
+        did all [
+            [<foo> sub 3 _ _] == reduce [g g g try g try g]
+            obj/sub/x = 3
+        ]
+    )
+]

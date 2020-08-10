@@ -177,13 +177,8 @@ inline static bool Was_Rightward_Continuation_Needed(
 //
 REB_R Evaluator_Executor(REBFRM *f)
 {
-    if (Is_Throwing(f)) {
-        //
-        // The Reevaluation executor does not catch throws or errors, and it
-        // has no state it needs to free during an unwind.
-        //
+    if (GET_EVAL_FLAG(f, ABRUPT_FAILURE))  // fail() from this executor
         return R_THROWN;
-    }
 
     // Caching KIND_BYTE(*at) in a local can make a slight performance
     // difference, though how much depends on what the optimizer figures out.
@@ -213,11 +208,15 @@ REB_R Evaluator_Executor(REBFRM *f)
         goto new_expression;
 
       case ST_EVALUATOR_EXECUTING_GROUP:
+        if (Is_Throwing(f))
+            return R_THROWN;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto group_execution_done;
 
       case ST_EVALUATOR_RUNNING_ACTION:
-        //
+        if (Is_Throwing(f))
+            return R_THROWN;
+
         // The Action_Executor does not get involved in Lookahead; so you
         // only get lookahead behavior when an action has been spawned from
         // a parent frame (such as one evaluating a block, or evaluating an
@@ -238,25 +237,48 @@ REB_R Evaluator_Executor(REBFRM *f)
         }
         goto lookahead;
 
+      case ST_EVALUATOR_PROCESSING_GET_PATH:
+        // uses TRAMPOLINE_KEEPALIVE, throw handling is for path_frame
+        v = f->u.reval.value;  // frame did not advance, saved value is stable
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto get_path_processed;
+
+      case ST_EVALUATOR_PROCESSING_SET_PATH:
+        // uses TRAMPOLINE_KEEPALIVE, throw handling is for path_frame
+        STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
+        goto set_path_processed;
+
       case ST_EVALUATOR_SET_WORD_RIGHT_SIDE:
+        if (Is_Throwing(f))
+            return R_THROWN;
         v = ensure(SET_WORD, f_spare);
+        kind.byte = REB_SET_WORD;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_word_with_out;
 
       case ST_EVALUATOR_SET_PATH_RIGHT_SIDE:
+        if (Is_Throwing(f))
+            return R_THROWN;
         v = ensure(SET_PATH, f_spare);
+        kind.byte = REB_SET_PATH;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_path_with_out;
 
       case ST_EVALUATOR_SET_GROUP_RIGHT_SIDE:
+        if (Is_Throwing(f))
+            return R_THROWN;
         v = ensure(SET_GROUP, f_spare);
+        kind.byte = REB_SET_GROUP;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_group_with_out;
 
       case ST_EVALUATOR_LOOKING_AHEAD:
+        if (Is_Throwing(f))
+            return R_THROWN;
         goto lookahead;
 
       case ST_EVALUATOR_REEVALUATING:
+        assert(not Is_Throwing(f));
         v = f->u.reval.value;
         gotten = nullptr;
         kind.byte = KIND_BYTE(v);
@@ -672,8 +694,8 @@ REB_R Evaluator_Executor(REBFRM *f)
 
         return R_CONTINUATION; }
 
-      group_execution_done:
-
+      group_execution_done: {
+        //
         // If group execution left a result, it may be new or it may be stale.
         // If it's stale and there's infix after it, that infix will catch
         // the error.
@@ -696,20 +718,36 @@ REB_R Evaluator_Executor(REBFRM *f)
         v = Lookback_While_Fetching_Next(f);
         kind.byte = KIND_BYTE(v);
         goto evaluate;
+      }
 
-
-//==//// PATH! ///////////////////////////////////////////////////////////==//
+//==//// PATH! and GET-PATH! /////////////////////////////////////////////==//
 //
 // Paths starting with inert values do not evaluate.  `/foo/bar` has a blank
 // at its head, and it evaluates to itself.
 //
 // Other paths run through the GET-PATH! mechanism and then EVAL the result.
 // If the get of the path is null, then it will be an error.
-
-      case REB_PATH: {
+//
+// Note that the GET native on a PATH! won't allow GROUP! execution:
+//
+//    foo: [X]
+//    path: 'foo/(print "side effect!" 1)
+//    get path  ; not allowed, due to surprising side effects
+//
+// However a source-level GET-PATH! allows them, since they are at the
+// callsite and you are assumed to know what you are doing:
+//
+//    :foo/(print "side effect" 1)  ; this is allowed
+//
+// Consistent with GET-WORD!, a GET-PATH! acts as GET and won't return VOID!.
+      
+      case REB_PATH:
+      case REB_GET_PATH: {
         if (MIRROR_BYTE(v) == REB_WORD) {
             assert(VAL_WORD_SYM(v) == SYM__SLASH_1_);
-            goto process_word;
+            if (VAL_TYPE(v) == REB_PATH)
+                goto process_word;
+            goto process_get_word;
         }
 
         assert(VAL_INDEX_UNCHECKED(v) == 0);  // this is the rule for now
@@ -723,27 +761,51 @@ REB_R Evaluator_Executor(REBFRM *f)
             break;
         }
 
-        REBVAL *where = GET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT)
-            ? f_spare
-            : f->out;
-
-        REBSTR *opt_label;
-        if (Eval_Path_Throws_Core(
-            where,
-            &opt_label,  // requesting says we run functions (not GET-PATH!)
+        DECLARE_ARRAY_FEED (
+            path_feed,
             VAL_ARRAY(v),
             VAL_INDEX(v),
-            Derive_Specifier(f_specifier, v),
-            nullptr,  // `setval`: null means don't treat as SET-PATH!
-            EVAL_MASK_DEFAULT | EVAL_FLAG_PUSH_PATH_REFINES
-        )){
-            if (where != f->out)
-                Move_Value(f->out, where);
-            goto return_thrown;
+            Derive_Specifier(f_specifier, v)
+        );
+        REBFLGS flags = EVAL_MASK_DEFAULT
+                | EVAL_FLAG_ALLOCATED_FEED
+                | EVAL_FLAG_TRAMPOLINE_KEEPALIVE;
+
+        if (kind.byte == REB_PATH)
+            flags |= EVAL_FLAG_PUSH_PATH_REFINES;  // how we tell which it was
+
+        DECLARE_FRAME (path_frame, path_feed, flags);
+        INIT_F_EXECUTOR(path_frame, &Path_Executor);
+
+        SET_END(f_spare);  // !!! Necessary?
+        Push_Frame(f_spare, path_frame);
+
+        PVS_OPT_LABEL(path_frame) = nullptr;  // state must be initialized
+        PVS_OPT_SETVAL(path_frame) = nullptr;  // not a SET-PATH!
+        
+        f->u.reval.value = v;  // feed doesn't advance -- we can recover it
+        STATE_BYTE(f) = ST_EVALUATOR_PROCESSING_GET_PATH;
+        return R_CONTINUATION;
+      }
+
+      get_path_processed: {
+        REBFRM *path_frame = FS_TOP;
+        assert(path_frame->prior == f);
+
+        if (Is_Throwing(path_frame)) {
+            Move_Value(f->out, f_spare);
+            Abort_Frame(path_frame);
+            return R_THROWN;
         }
 
-        if (IS_ACTION(where)) {  // try this branch before fail on void+null
-            REBACT *act = VAL_ACTION(where);
+        if (
+            IS_ACTION(f_spare)  // try this branch before fail on void
+            and GET_EVAL_FLAG(path_frame, PUSH_PATH_REFINES)  // not GET-PATH!
+        ){
+            REBACT *act = VAL_ACTION(f_spare);
+
+            REBSTR *opt_label = PVS_OPT_LABEL(path_frame);
+            Drop_Frame_Unbalanced(path_frame);  // may accrue refinements
 
             // PATH! dispatch is costly and can error in more ways than WORD!:
             //
@@ -762,11 +824,8 @@ REB_R Evaluator_Executor(REBFRM *f)
 
             DECLARE_ACTION_SUBFRAME (subframe, f);
             Push_Frame(f->out, subframe);
-            Push_Action(subframe, VAL_ACTION(where), VAL_BINDING(where));
+            Push_Action(subframe, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
             Begin_Prefix_Action(subframe, opt_label);
-
-            if (where == subframe->out)
-                Expire_Out_Cell_Unless_Invisible(subframe);
 
             // !!! The subframe needs to have its baseline DSP match the
             // baseline before the refinements were pushed from the path.
@@ -779,13 +838,17 @@ REB_R Evaluator_Executor(REBFRM *f)
             goto process_action;
         }
 
-        if (IS_VOID(where))  // need `:x/y` if it's void (unset)
+        Drop_Frame(path_frame);
+
+        if (IS_VOID(f_spare))  // need `:x/y` if it's void (unset)
             fail (Error_Need_Non_Void_Core(v, f_specifier));
 
-        if (where != f->out)
-            Move_Value(f->out, where);  // won't move CELL_FLAG_UNEVALUATED
-        else
-            CLEAR_CELL_FLAG(f->out, UNEVALUATED);
+        // !!! This didn't appear to be true for `-- "hi" "hi"`, processing
+        // GET-PATH! of a variadic.  Review if it should be true.
+        //
+        /* assert(NOT_CELL_FLAG(f_spare, CELL_FLAG_UNEVALUATED)); */
+
+        Move_Value(f->out, f_spare);  // won't move CELL_FLAG_UNEVALUATED
         break; }
 
 
@@ -821,62 +884,50 @@ REB_R Evaluator_Executor(REBFRM *f)
             STATE_BYTE(f) = ST_EVALUATOR_SET_PATH_RIGHT_SIDE;
             return R_CONTINUATION;
         }
+        goto set_path_with_out;
+      }
 
-      set_path_with_out:
+      set_path_with_out: {
         if (IS_END(f->out))  // e.g. `do [x: ()]` or `(x: comment "hi")`.
             fail (Error_Need_Non_End_Core(v, f_specifier));
 
-        CLEAR_CELL_FLAG(f->out, UNEVALUATED);  // this helper counts as eval
-
-        if (Eval_Path_Throws_Core(
-            f_spare,  // output if thrown, used as scratch space otherwise
-            nullptr,  // not requesting symbol means refinements not allowed
-            VAL_ARRAY(v),  // Note: `v` may be f_spare--that's okay here
+        DECLARE_ARRAY_FEED (
+            path_feed,
+            VAL_ARRAY(v),
             VAL_INDEX(v),
-            Derive_Specifier(f_specifier, v),
-            f->out,
-            EVAL_MASK_DEFAULT  // evaluating GROUP!s ok
-        )){
+            Derive_Specifier(f_specifier, v)
+        );
+        DECLARE_FRAME (
+            path_frame,
+            path_feed,
+            EVAL_MASK_DEFAULT
+                | EVAL_FLAG_ALLOCATED_FEED
+                | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
+        );
+        INIT_F_EXECUTOR(path_frame, &Path_Executor);
+
+        PVS_OPT_LABEL(path_frame) = nullptr;  // state must be initialized
+        PVS_OPT_SETVAL(path_frame) = f->out;
+
+        SET_END(f_spare);  // !!! Necessary?
+        Push_Frame(f_spare, path_frame);  // overwrites v
+        STATE_BYTE(f) = ST_EVALUATOR_PROCESSING_SET_PATH;
+        return R_CONTINUATION;
+      }
+
+      set_path_processed: {
+        REBFRM *path_frame = FS_TOP;
+        assert(path_frame->prior == f);
+
+        if (Is_Throwing(path_frame)) {
             Move_Value(f->out, f_spare);
-            goto return_thrown;
+            Abort_Frame(path_frame);
+            return R_THROWN;
         }
 
-        break; }
-
-
-//==//// GET-PATH! ///////////////////////////////////////////////////////==//
-//
-// Note that the GET native on a PATH! won't allow GROUP! execution:
-//
-//    foo: [X]
-//    path: 'foo/(print "side effect!" 1)
-//    get path  ; not allowed, due to surprising side effects
-//
-// However a source-level GET-PATH! allows them, since they are at the
-// callsite and you are assumed to know what you are doing:
-//
-//    :foo/(print "side effect" 1)  ; this is allowed
-//
-// Consistent with GET-WORD!, a GET-PATH! acts as GET and won't return VOID!.
-
-      case REB_GET_PATH:
-        if (MIRROR_BYTE(v) == REB_WORD) {
-            assert(VAL_WORD_SYM(v) == SYM__SLASH_1_);
-            goto process_get_word;
-        }
-
-        if (Get_Path_Throws_Core(f->out, v, f_specifier))
-            goto return_thrown;
-
-        if (IS_VOID(f->out))  // need GET/ANY if it's void ("undefined")
-            fail (Error_Need_Non_Void_Core(v, f_specifier));
-
-        // !!! This didn't appear to be true for `-- "hi" "hi"`, processing
-        // GET-PATH! of a variadic.  Review if it should be true.
-        //
-        /* assert(NOT_CELL_FLAG(f->out, CELL_FLAG_UNEVALUATED)); */
-        CLEAR_CELL_FLAG(f->out, UNEVALUATED);
+        Drop_Frame(path_frame);
         break;
+      }
 
 
 //==//// GET-GROUP! //////////////////////////////////////////////////////==//

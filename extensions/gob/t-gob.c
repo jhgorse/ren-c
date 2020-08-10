@@ -810,15 +810,17 @@ REB_R PD_Gob(
                 Move_Value(orig_picker, picker);
                 PUSH_GC_GUARD(orig_picker);
 
-                if (Next_Path_Throws(pvs)) // sets value in pvs->store
-                    fail (Error_No_Catch_For_Throw(pvs->out)); // Review
+         /*       if (Next_Path_Throws(pvs)) // sets value in pvs->store
+                    fail (Error_No_Catch_For_Throw(pvs->out)); // Review */
 
-                // write it back to gob
+                fail ("Not working right now");
+
+/*                // write it back to gob
                 //
                 if (not Did_Set_GOB_Var(gob, orig_picker, pvs->out))
                     return R_UNHANDLED;
 
-                DROP_GC_GUARD(orig_picker);
+                DROP_GC_GUARD(orig_picker);*/
             }
             return pvs->out;
         }

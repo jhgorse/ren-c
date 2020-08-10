@@ -762,9 +762,9 @@ struct Reb_Frame {
     // References are used by path dispatch.
     //
     struct {
-        RELVAL *cell;
-        REBSPC *specifier;
-    } ref;
+        RELVAL *ref;
+        REBSPC *ref_specifier;
+    } path;
 
     // Used to slip cell to re-evaluate into Eval_Core()
     //
