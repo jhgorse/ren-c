@@ -301,7 +301,7 @@
 // https://en.wikipedia.org/wiki/Stackless_Python
 //
 #define R_CONTINUATION \
-    cast(REBVAL*, &PG_R_Continuation)
+    cast(REBVAL*, 1 * ALIGN_SIZE)
 
 
 // DEWIND is a formalization of the concept of a function changing the stack

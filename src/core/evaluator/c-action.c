@@ -1216,6 +1216,8 @@ REB_R Action_Executor(REBFRM *f)
     else if (not r) {  // API and internal code can both return `nullptr`
         Init_Nulled(f->out);
     }
+    else if (r == R_CONTINUATION)
+        return R_CONTINUATION;
     else if (GET_CELL_FLAG(r, ROOT)) {  // API, from Alloc_Value()
         Handle_Api_Dispatcher_Result(f, r);
     }
