@@ -456,41 +456,46 @@ REB_R Evaluator_Executor(REBFRM *f)
         goto finished;
 
 
-//==//// NULL ////////////////////////////////////////////////////////////==//
-//
-// Since nulled cells can't be in BLOCK!s, the evaluator shouldn't usually see
-// them.  Plus Q APIs quotes spliced values, so `rebValueQ("null?", nullptr)`
-// gets a QUOTED! that evaluates to null--it's not a null being evaluated.
-//
-// But plain `rebValue("null?", nullptr)` would be an error.  Another way
-// the evaluator can see NULL is REEVAL, such as `reeval first []`.
+    //==//// NULL ////////////////////////////////////////////////////////==//
+    //
+    // Since nulled cells can't be in BLOCK!s, the evaluator shouldn't usually
+    // see them.  It is technically possible to see one using REEVAL, such as
+    // with `reeval first []`.  However, the more common way to encounter this
+    // situation would be in the API:
+    //
+    //     REBVAL *v = nullptr;
+    //     bool is_null = rebDid("null?", v);  // oops, should be rebQ(v)
+    //
+    // Note: It seems tempting to let NULL evaluate to NULL as a convenience
+    // for such cases.  But this breaks the system in subtle ways--like
+    // making it impossible to "reify" the instruction stream as a BLOCK!
+    // for the debugger.  Mechanically speaking, this is best left an error.
 
       case REB_NULLED:
         fail (Error_Evaluate_Null_Raw());
 
 
-//==//// VOID! ///////////////////////////////////////////////////////////==//
-//
-// "A void! is a means of giving a hot potato back that is a warning about
-//  something, but you don't want to force an error 'in the moment'...in case
-//  the returned information wasn't going to be used anyway."
-//
-// https://forum.rebol.info/t/947
-//
-// If we get here, the evaluator is actually seeing it, and it's time to fail.
+    //==//// VOID! ///////////////////////////////////////////////////////==//
+    //
+    // "A void! is a means of giving a hot potato back that is a warning about
+    //  something, but you don't want to force an error 'in the moment'...in
+    //  case the returned information wasn't going to be used anyway."
+    //
+    // https://forum.rebol.info/t/947
+    //
+    // If we get here, the evaluator is seeing it, and it's time to fail.
 
       case REB_VOID:
         fail (Error_Void_Evaluation_Raw());
 
 
-//==//// ACTION! /////////////////////////////////////////////////////////==//
-//
-// If an action makes it to the SWITCH statement, that means it is either
-// literally an action value in the array (`do compose [1 (:+) 2]`) or is
-// being retriggered via EVAL.
-//
-// Most action evaluations are triggered from a WORD! or PATH!, which jumps in
-// at the `process_action` label.
+    //==//// ACTION! /////////////////////////////////////////////////////==//
+    //
+    // If an action makes it to the SWITCH statement, that means it is either
+    // literally an action value in the array (`do compose [1 (:+) 2]`) or is
+    // being retriggered via REEVAL.
+    //
+    // Most action evaluations are triggered from a WORD! or PATH! case.
 
       case REB_ACTION: {
         REBSTR *opt_label = nullptr;  // not run from WORD!/PATH!, "nameless"
@@ -514,17 +519,17 @@ REB_R Evaluator_Executor(REBFRM *f)
         return R_CONTINUATION;
 
 
-//==//// WORD! ///////////////////////////////////////////////////////////==//
-//
-// A plain word tries to fetch its value through its binding.  It will fail
-// and longjmp out of this stack if the word is unbound (or if the binding is
-// to a variable which is not set).  Should the word look up to an action,
-// then that action will be called by jumping to the ACTION! case.
-//
-// NOTE: The usual dispatch of enfix functions is *not* via a REB_WORD in this
-// switch, it's by some code at the `post_switch:` label.  So you only see
-// enfix in cases like `(+ 1 2)`, or after PARAMLIST_IS_INVISIBLE e.g.
-// `10 comment "hi" + 20`.
+    //==//// WORD! ///////////////////////////////////////////////////////==//
+    //
+    // A plain word tries to fetch its value through its binding.  It fails
+    // if the word is unbound (or if the binding is to a variable which is
+    // set, but VOID!).  Should the word look up to an action, then that
+    // action will be invoked.
+    //
+    // NOTE: The usual dispatch of enfix functions is *not* via a REB_WORD in
+    // this switch, it's by some code at the `lookahead:` label.  You only see
+    // enfix here when there was nothing to the left, so cases like `(+ 1 2)`
+    // or in "stale" left hand situations like `10 comment "hi" + 20`.
 
       process_word:
       case REB_WORD:
@@ -568,11 +573,11 @@ REB_R Evaluator_Executor(REBFRM *f)
         break;
 
 
-//==//// SET-WORD! ///////////////////////////////////////////////////////==//
-//
-// Right hand side is evaluated into `out`, and then copied to the variable.
-//
-// Nulled cells and void cells are allowed: https://forum.rebol.info/t/895/4
+    //==//// SET-WORD! ///////////////////////////////////////////////////==//
+    //
+    // Right side is evaluated into `out`, and then copied to the variable.
+    //
+    // Null and void assigns are allowed: https://forum.rebol.info/t/895/4
 
       process_set_word:
       case REB_SET_WORD: {
@@ -591,14 +596,17 @@ REB_R Evaluator_Executor(REBFRM *f)
         break; }
 
 
-//==//// GET-WORD! ///////////////////////////////////////////////////////==//
-//
-// A GET-WORD! does no dispatch on functions.  It will fetch other values as
-// normal, but will error on VOID! and direct you to GET/ANY.  This matches
-// Rebol2 behavior, choosing to break with R3-Alpha and Red which will give
-// back "voided" values ("UNSET!")...to make typos less likely to bite those
-// who wanted to use ACTION!s inertly:
-// https://forum.rebol.info/t/should-get-word-of-a-void-raise-an-error/1301
+    //==//// GET-WORD! ///////////////////////////////////////////////////==//
+    //
+    // A GET-WORD! does no dispatch on functions.  It will fetch other values
+    // as normal, but will error on VOID! and direct you to GET/ANY.
+    //
+    // This handling of voids matches Rebol2 behavior, choosing to break with
+    // R3-Alpha and Red which will give back "voided" values ("UNSET!").
+    // The choice was made to make typos less likely to bite those whose
+    // intent with GET-WORD! was merely to use ACTION!s inertly:
+    //
+    // https://forum.rebol.info/t/1301
 
       process_get_word:
       case REB_GET_WORD:
@@ -612,46 +620,46 @@ REB_R Evaluator_Executor(REBFRM *f)
         break;
 
 
-//==//// GROUP! ///////////////////////////////////////////////////////////=//
-//
-// A GROUP! whose contents wind up vaporizing wants to be invisible:
-//
-//     >> 1 + 2 ()
-//     == 3
-//
-//     >> 1 + 2 (comment "hi")
-//     == 3
-//
-// But there's a limit with group invisibility and enfix.  A single step
-// of the evaluator only has one lookahead, because it doesn't know if it
-// wants to evaluate the next thing or not:
-//
-//     >> evaluate [1 (2) + 3]
-//     == [(2) + 3]  ; takes one step...so next step will add 2 and 3
-//
-//     >> evaluate [1 (comment "hi") + 3]
-//     == [(comment "hi") + 3]  ; next step errors: `+` has no left argument
-//
-// It is supposed to be possible for DO to be implemented as a series of
-// successive single EVALUATE steps, giving no input beyond the block.  So
-// that means even though the `f->out` may technically still hold bits of
-// the last evaluation such that `do [1 (comment "hi") + 3]` could draw
-// from them to give a left hand argument, it should not do so...and it's
-// why those bits are marked "stale".
-//
-// The other side of the operator is a different story.  Turning up no result,
-// the group can just invoke a reevaluate without breaking any rules:
-//
-//     >> evaluate [1 + (2) 3]
-//     == [3]
-//
-//     >> evaluate [1 + (comment "hi") 3]
-//     == []
-//
-// This subtlety means the continuation for running a GROUP! has the subtlety
-// of noticing when no result was produced (an output of END) and then
-// re-triggering a step in the parent frame, e.g. to pick up the 3 above.
-//
+    //==//// GROUP! ///////////////////////////////////////////////////////=//
+    //
+    // A GROUP! whose contents wind up vaporizing wants to be invisible:
+    //
+    //     >> 1 + 2 ()
+    //     == 3
+    //
+    //     >> 1 + 2 (comment "hi")
+    //     == 3
+    //
+    // But there's a limit with group invisibility and enfix.  A single step
+    // of the evaluator only has one lookahead, because it doesn't know if it
+    // wants to evaluate the next thing or not:
+    //
+    //     >> evaluate [1 (2) + 3]
+    //     == [(2) + 3]  ; takes one step...so next step will add 2 and 3
+    //
+    //     >> evaluate [1 (comment "hi") + 3]
+    //     == [(comment "hi") + 3]  ; next step errors: + has no left argument
+    //
+    // It is supposed to be possible for DO to be implemented as a series of
+    // successive single EVALUATE steps, giving no input beyond the block.  So
+    // that means even though the `f->out` may technically still hold bits of
+    // the last evaluation such that `do [1 (comment "hi") + 3]` *could* draw
+    // from them to give a left hand argument, it should not do so...and it's
+    // why those bits are marked "stale".
+    //
+    // The right of the operator is different story.  Turning up no result,
+    // the group can just invoke a reevaluate without breaking any rules:
+    //
+    //     >> evaluate [1 + (2) 3]
+    //     == [3]
+    //
+    //     >> evaluate [1 + (comment "hi") 3]
+    //     == []
+    //
+    // This subtlety means the continuation for running a GROUP! must be able
+    // to notice when no result was produced (an output of END) and then
+    // re-trigger a step in the parent frame, e.g. to pick up the 3 above.
+
       case REB_GROUP: {
         f_next_gotten = nullptr;  // arbitrary code changes fetched variables
 
@@ -710,26 +718,30 @@ REB_R Evaluator_Executor(REBFRM *f)
         goto evaluate;
       }
 
-//==//// PATH! and GET-PATH! /////////////////////////////////////////////==//
-//
-// Paths starting with inert values do not evaluate.  `/foo/bar` has a blank
-// at its head, and it evaluates to itself.
-//
-// Other paths run through the GET-PATH! mechanism and then EVAL the result.
-// If the get of the path is null, then it will be an error.
-//
-// Note that the GET native on a PATH! won't allow GROUP! execution:
-//
-//    foo: [X]
-//    path: 'foo/(print "side effect!" 1)
-//    get path  ; not allowed, due to surprising side effects
-//
-// However a source-level GET-PATH! allows them, since they are at the
-// callsite and you are assumed to know what you are doing:
-//
-//    :foo/(print "side effect" 1)  ; this is allowed
-//
-// Consistent with GET-WORD!, a GET-PATH! acts as GET and won't return VOID!.
+    //==//// PATH! and GET-PATH! /////////////////////////////////////////==//
+    //
+    // PATH! and GET-PATH! have similar mechanisms, with the difference being
+    // that if a PATH! looks up to an action it will execute it.
+    //
+    // Paths looking up to VOID! are handled consistently with WORD! and
+    // GET-WORD!, and will error...directing you use GET/ANY if fetching
+    // voids is what you actually intended.
+    //
+    // PATH!s starting with inert values do not evaluate.  `/foo/bar` has a
+    // blank at its head, and it evaluates to itself.
+    //
+    // (Note: Behavior of blank-headed path is still being debated.)
+    //
+    // Note that the GET native on a paths won't allow GROUP! execution:
+    //
+    //    foo: [X]
+    //    path: 'foo/(print "side effect!" 1)
+    //    get path  ; not allowed, due to surprising side effects
+    //
+    // However a source-level PATH!/GET-PATH! allows them, since they are at
+    // the callsite and you are assumed to know what you are doing:
+    //
+    //    :foo/(print "side effect" 1)  ; this is allowed
       
       case REB_PATH:
       case REB_GET_PATH: {
@@ -841,27 +853,25 @@ REB_R Evaluator_Executor(REBFRM *f)
         break; }
 
 
-//==//// SET-PATH! ///////////////////////////////////////////////////////==//
-//
-// See notes on SET-WORD!  SET-PATH!s are handled in a similar way, by
-// pushing them to the stack, continuing the evaluation via a lightweight
-// reuse of the current frame.
-//
-// !!! The evaluation ordering is dictated by the fact that there isn't a
-// separate "evaluate path to target location" and "set target' step.  This
-// is because some targets of assignments (e.g. gob/size/x:) do not correspond
-// to a cell that can be returned; the path operation "encodes as it goes"
-// and requires the value to set as a parameter to Eval_Path.  Yet it is
-// counterintuitive given the "left-to-right" nature of the language:
-//
-//     >> foo: make object! [[bar][bar: 10]]
-//
-//     >> foo/(print "left" 'bar): (print "right" 20)
-//     right
-//     left
-//     == 20
-//
-// Note that nulled cells are allowed: https://forum.rebol.info/t/895/4
+    //==//// SET-PATH! ///////////////////////////////////////////////////==//
+    //
+    // See notes on SET-WORD!  SET-PATH!s are handled in a similar way.
+    //
+    // !!! The evaluation ordering is dictated by the fact that there isn't a
+    // separate "evaluate path to target location" and "set target' step.
+    // This is because some targets of assignments (e.g. gob/size/x:) do not
+    // correspond to a cell that can be returned; the path operation "encodes
+    // as it goes" and requires the value to set as a parameter.  Yet it is
+    // counterintuitive given the "left-to-right" nature of the language:
+    //
+    //     >> foo: make object! [[bar][bar: 10]]
+    //
+    //     >> foo/(print "left" 'bar): (print "right" 20)
+    //     right
+    //     left
+    //     == 20
+    //
+    // VOID! and NULL assigns are allowed: https://forum.rebol.info/t/895/4
 
       case REB_SET_PATH: {
         if (MIRROR_BYTE(v) == REB_WORD) {
@@ -918,11 +928,16 @@ REB_R Evaluator_Executor(REBFRM *f)
       }
 
 
-//==//// GET-GROUP! //////////////////////////////////////////////////////==//
-//
-// Evaluates the group, and then executes GET-WORD!/GET-PATH!/GET-BLOCK!
-// operation on it, if it's a WORD! or a PATH! or BLOCK!.  If it's an arity-0
-// action, it is allowed to execute as a form of "functional getter".
+    //==//// GET-GROUP! //////////////////////////////////////////////////==//
+    //
+    // Evaluates the group, and then executes GET-WORD!/GET-PATH!/GET-BLOCK!
+    // operation on it, if it's a WORD! or a PATH! or BLOCK!.  If it's an
+    // arity-0 action, it executes as a form of "functional getter".
+    //
+    // !!! GET-GROUP behavior is up in the air at this point; it was given
+    // an initial behavior as an experiment.  But since `(x): ...` is only
+    // one character shorter than `set x ...`, it's not clear the chosen
+    // behavior gets significant leverage.  This is being reviewed.
 
       case REB_GET_GROUP: {
         f_next_gotten = nullptr;  // arbitrary code changes fetched variables
@@ -961,10 +976,12 @@ REB_R Evaluator_Executor(REBFRM *f)
         goto evaluate; }
 
 
-//==//// SET-GROUP! //////////////////////////////////////////////////////==//
-//
-// Synonym for SET on the produced thing, unless it's an action...in which
-// case an arity-1 function is allowed to be called and passed the right.
+    //==//// SET-GROUP! //////////////////////////////////////////////////==//
+    //
+    // Synonym for SET on the produced thing, unless it's an action...in which
+    // case an arity-1 function is allowed to be called and passed the right.
+    //
+    // !!! As with GET-GROUP!, this behavior is not necessarily being kept.
 
       case REB_SET_GROUP: {
         //
@@ -1076,36 +1093,38 @@ REB_R Evaluator_Executor(REBFRM *f)
         fail (Error_Bad_Set_Group_Raw()); }
 
 
-//==//// GET-BLOCK! //////////////////////////////////////////////////////==//
-//
-// !!! The current thinking on GET_BLOCK! is that it will likely be an inert
-// type, used primarily for requesting that branches not be "voidified" in
-// control structures.  This replaces earlier thinking that it might be used
-// as a shorthand for reducing a literal block, which would be of limited use.
+    //==//// GET-BLOCK! //////////////////////////////////////////////////==//
+    //
+    // !!! Current thinking on GET_BLOCK! is that it will likely be an inert
+    // type, used primarily for requesting that branches not be "voidified" in
+    // control structures.  This replaces earlier thinking that it might be
+    // used as a shorthand for reducing a literal block, which would be of
+    // limited use.
 
       case REB_GET_BLOCK:
         Derelativize(f->out, v, f_specifier);
         break;
 
 
-//==//// SET-BLOCK! //////////////////////////////////////////////////////==//
-//
-// The evaluator treats SET-BLOCK! specially as a means for implementing
-// multiple return values.  The trick is that it does so by pre-loading
-// arguments in the frame with variables to update, in a way that could have
-// historically been achieved with passing a WORD! or PATH! to a refinement.
-// So if there was a function that updates a variable you pass in by name:
-//
-//     result: updating-function/update arg1 arg2 'var
-//
-// The /UPDATE parameter is marked as being effectively a "return value", so
-// that equivalent behavior can be achieved with:
-//
-//     [result var]: updating-function arg1 arg2
-//
-// !!! This is an extremely slow-running prototype of the desired behavior.
-// It is a mock up intended to find any flaws in the concept before writing
-// a faster native version that would require rewiring the evaluator somewhat.
+    //==//// SET-BLOCK! //////////////////////////////////////////////////==//
+    //
+    // The evaluator treats SET-BLOCK! specially as a means for implementing
+    // multiple return values.  The trick is that it does so by pre-loading
+    // arguments in the frame with variables to update, in a way that could
+    // have historically been achieved with passing a WORD! or PATH! to a
+    // refinement.  So if there was a function that updates a variable you
+    // pass in by name:
+    //
+    //     result: updating-function/update arg1 arg2 'var
+    //
+    // The /UPDATE parameter is marked as `<out>`, hence effectively a
+    // "return value", so that equivalent behavior can be achieved with:
+    //
+    //     [result var]: updating-function arg1 arg2
+    //
+    // !!! This is a VERY slow-running prototype of the desired behavior.  It
+    // is a mock up intended to find any flaws in the concept before writing
+    // a faster version that would require rewiring the evaluator somewhat.
 
       case REB_SET_BLOCK: {
         assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
@@ -1214,11 +1233,11 @@ REB_R Evaluator_Executor(REBFRM *f)
         goto evaluate; }
 
 
-//==//////////////////////////////////////////////////////////////////////==//
-//
-// Treat all the other Is_Bindable() types as inert
-//
-//==//////////////////////////////////////////////////////////////////////==//
+    //==//////////////////////////////////////////////////////////////////==//
+    //
+    // Treat all the other Is_Bindable() types as inert
+    //
+    //==//////////////////////////////////////////////////////////////////==//
 
       case REB_BLOCK:
         //
@@ -1250,11 +1269,11 @@ REB_R Evaluator_Executor(REBFRM *f)
         goto inert;
 
 
-//==//////////////////////////////////////////////////////////////////////==//
-//
-// Treat all the other not Is_Bindable() types as inert
-//
-//==//////////////////////////////////////////////////////////////////////==//
+    //==//////////////////////////////////////////////////////////////////==//
+    //
+    // Treat all the other not Is_Bindable() types as inert
+    //
+    //==//////////////////////////////////////////////////////////////////==//
 
       case REB_BLANK:
         //
@@ -1283,14 +1302,14 @@ REB_R Evaluator_Executor(REBFRM *f)
         break;
 
 
-//=//// QUOTED! (at 4 or more levels of escaping) /////////////////////////=//
-//
-// This is the form of literal that's too escaped to just overlay in the cell
-// by using a higher kind byte.  See the `default:` case in this switch for
-// handling of the more compact forms, that are much more common.
-//
-// (Highly escaped literals should be rare, but for completeness you need to
-// be able to escape any value, including any escaped one...!)
+    //=//// QUOTED! (at 4 or more levels of escaping) /////////////////////=//
+    //
+    // This is the form of literal that's too escaped to just overlay in the
+    // cell by using a higher kind byte.  See the `default:` case in this
+    // switch for handling of the much more common compact forms.
+    //
+    // (Highly escaped literals should be rare, but for completeness you need
+    // to be able to escape any value, including any escaped one...!)
 
       case REB_QUOTED:
         Derelativize(f->out, v, f_specifier);
@@ -1298,11 +1317,11 @@ REB_R Evaluator_Executor(REBFRM *f)
         break;
 
 
-//==//// QUOTED! (at 3 levels of escaping or less...or just garbage) //////=//
-//
-// All the values for types at >= REB_64 currently represent the special
-// compact form of literals, which overlay inside the cell they escape.
-// The real type comes from the type modulo 64.
+    //==//// QUOTED! (at 3 levels of escaping or less...or garbage) ///////=//
+    //
+    // All the values for types at >= REB_64 currently represent the special
+    // compact form of literals, which overlay inside the cell they escape.
+    // The real type comes from the type modulo 64.
 
       default:
         Derelativize(f->out, v, f_specifier);
