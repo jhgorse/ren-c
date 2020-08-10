@@ -115,15 +115,6 @@ enum {
 };
 
 
-// Helper for calling Trampoline_Throws(), which acts through a function
-// pointer...so that if there is a hooked trampoline it won't be skipped.
-//
-inline static bool Eval_Throws(REBFRM *f) {
-    assert(f == FS_TOP);
-    return (*PG_Trampoline_Throws)(f);
-}
-
-
 // If you're sure the evaluator isn't hooked, it seems no point in asking to
 // "evaluate" a 1 (if there's nothing enfix after it).  You can take an inert
 // optimization.  But if the evaluator is hooked with a trace or stepwise
@@ -261,9 +252,9 @@ inline static bool Eval_Step_Maybe_Stale_Throws(
     assert(f == FS_TOP);
     assert(NOT_FEED_FLAG(f->feed, NO_LOOKAHEAD));
 
+    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     f->out = out;
     f->baseline.dsp = DSP;
-    f->executor = &Evaluator_Executor;
     return (*PG_Trampoline_Throws)(f); // should already be pushed;
 }
 
@@ -294,12 +285,11 @@ inline static bool Eval_Step_In_Subframe_Throws(
     // was necessary.
 
     DECLARE_FRAME (subframe, f->feed, flags | EVAL_FLAG_ROOT_FRAME);
-    subframe->executor = &Evaluator_Executor;
+    Push_Frame(out, subframe, &Evaluator_Executor);
 
-    Push_Frame(out, subframe);
-    bool threw = Eval_Throws(subframe);
+    bool threw = Trampoline_Throws(subframe);
+
     Drop_Frame(subframe);
-
     return threw;
 }
 
@@ -329,10 +319,9 @@ inline static bool Eval_Step_In_Any_Array_At_Throws(
         specifier,
         flags | EVAL_FLAG_ALLOCATED_FEED
     );
-    INIT_F_EXECUTOR(f, &Evaluator_Executor);
+    Push_Frame(out, f, &Evaluator_Executor);
 
-    Push_Frame(out, f);
-    bool threw = Eval_Throws(f);
+    bool threw = Trampoline_Throws(f);
 
     if (threw)
         *index_out = TRASHED_INDEX;
@@ -340,7 +329,6 @@ inline static bool Eval_Step_In_Any_Array_At_Throws(
         *index_out = f->feed->index - 1;
 
     Drop_Frame(f);
-
     return threw;
 }
 
@@ -373,10 +361,9 @@ inline static bool Eval_Step_In_Va_Throws_Core(
     DECLARE_VA_FEED (feed, p, vaptr, feed_flags);
 
     DECLARE_FRAME (f, feed, eval_flags | EVAL_FLAG_ROOT_FRAME);
-    INIT_F_EXECUTOR(f, &Evaluator_Executor);
+    Push_Frame(out, f, &Evaluator_Executor);
 
-    Push_Frame(out, f);
-    bool threw = Eval_Throws(f);
+    bool threw = Trampoline_Throws(f);
     if (threw and IS_ERROR(VAL_THROWN_LABEL(f->out))) {
         if (Is_Action_Frame(f))
             Drop_Action(f);
@@ -427,10 +414,10 @@ inline static bool Eval_Value_Throws(
     );
 
     DECLARE_FRAME (f, feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    INIT_F_EXECUTOR(f, &Evaluator_Executor);
+    Push_Frame(out, f, &Evaluator_Executor);
 
-    Push_Frame(out, f);
-    bool threw = Eval_Throws(f);
+    bool threw = Trampoline_Throws(f);
+
     Drop_Frame(f);
 
     // The callsites for Eval_Value_Throws() generally expect an evaluative

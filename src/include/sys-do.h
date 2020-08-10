@@ -53,10 +53,9 @@ inline static bool Do_Feed_To_End_Maybe_Stale_Throws(
     REBFLGS flags
 ){
     DECLARE_FRAME (f, feed, flags | EVAL_FLAG_ROOT_FRAME | EVAL_FLAG_TO_END);
-    INIT_F_EXECUTOR(f, &Evaluator_Executor);
+    Push_Frame(out, f, &Evaluator_Executor);
 
-    Push_Frame(out, f);
-    bool threw = (*PG_Trampoline_Throws)(f);
+    bool threw = Trampoline_Throws(f);
 
     if (threw and IS_ERROR(VAL_THROWN_LABEL(f->out))) {
         if (Is_Action_Frame(f))

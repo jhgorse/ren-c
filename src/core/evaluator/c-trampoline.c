@@ -342,6 +342,7 @@ bool Trampoline_Throws(REBFRM *f)
             Move_Value(DS_PUSH(), VAL_THROWN_LABEL(f->out));
             CATCH_THROWN(f->out, f->out);
             STATE_BYTE(f) = 0;
+            TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
             INIT_F_EXECUTOR(f, &Cleaner_Executor);
             STATE_BYTE(f) = ST_CLEANER_RUNNING_THROWN;
             goto loop;
@@ -544,22 +545,20 @@ REBNATIVE(go)
     // into the output of the frame it is given vs. having a separate arg.
     // So while the frame is being built, let it be set to D_OUT.
     //
-    Push_Frame(D_OUT, f);
-
     if (IS_ACTION(source)) {
+        Push_Frame(D_OUT, f, &Action_Executor);
         Push_Action(f, VAL_ACTION(source), VAL_BINDING(source));
         REBSTR *opt_label = nullptr;
         Begin_Prefix_Action(f, opt_label);
         f_param = END_NODE;
     }
     else {
+        Push_Frame(D_OUT, f, &Evaluator_Executor);
         assert(IS_BLOCK(source));
         DECLARE_FEED_AT (feed, source);
         f->feed = feed;
         SET_EVAL_FLAG(f, ALLOCATED_FEED);
         SET_EVAL_FLAG(f, TO_END);
-
-        INIT_F_EXECUTOR(f, &Evaluator_Executor);
     }
 
     // Now that the frame is built, we want it to be executed on its own

@@ -1874,8 +1874,8 @@ REB_R Scanner_Executor(REBFRM *f) {
                 EVAL_MASK_DEFAULT
                     | EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // we want accrued stack
             );
-            Push_Frame(f->out, subframe);  // !!! trashes u.scan members ATM
-            INIT_F_EXECUTOR(subframe, &Scanner_Executor);
+            Push_Frame(f->out, subframe, &Scanner_Executor);
+                // !!! ^-- trashes u.scan members ATM
 
             ++ss->depth;
             subframe->u.scan.ss = ss;
@@ -2572,11 +2572,10 @@ REB_R Scanner_Executor(REBFRM *f) {
 //
 REBVAL *Scan_To_Stack(SCAN_LEVEL *level) {
     DECLARE_END_FRAME (f, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    INIT_F_EXECUTOR(f, &Scanner_Executor);
 
     DECLARE_LOCAL (temp);
     SET_END(temp);
-    Push_Frame(temp, f);
+    Push_Frame(temp, f, &Scanner_Executor);
 
     f->u.scan = *level;  // !!! Push_Frame currently trashes f->u members
 
@@ -2869,8 +2868,7 @@ REBNATIVE(transcode)
     const REBYTE *bp = VAL_BYTES_AT(&size, source);
 
     DECLARE_END_FRAME (f, EVAL_MASK_DEFAULT | EVAL_FLAG_TRAMPOLINE_KEEPALIVE);
-    INIT_F_EXECUTOR(f, &Scanner_Executor);
-    Push_Frame(D_OUT, f);  // !!! Note: corrupts f->u.scan ATM
+    Push_Frame(D_OUT, f, &Scanner_Executor);  // !!! corrupts f->u.scan ATM
 
     SCAN_STATE *ss = TRY_ALLOC(SCAN_STATE);
     Init_Scan_Level(&f->u.scan, ss, filename, start_line, bp, size);

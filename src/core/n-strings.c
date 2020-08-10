@@ -91,8 +91,9 @@ REBNATIVE(delimit)
 
     Init_Blank(pending);  // no output yet, also IS_FALSEY() so not pending
 
+    REBFRM *f = Push_Eval_Stepper_Continuation(D_OUT, line);
+    UNUSED(f);  // recovered on eval_step_finished
     Init_Nulled(D_OUT);  // in case `spaced [()]` or similar, default null
-    Push_Continuation_At(D_OUT, line);
     D_STATE_BYTE = ST_DELIMIT_EVAL_STEP;
     return R_CONTINUATION;
   }

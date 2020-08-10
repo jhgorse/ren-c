@@ -95,8 +95,7 @@ REB_R Path_Executor(REBFRM *f)
         );
 
         Init_Void(f->out);  // in case all invisibles, as usual
-        Push_Frame(f->out, blockframe);
-        INIT_F_EXECUTOR(blockframe, &Evaluator_Executor);
+        Push_Frame(f->out, blockframe, &Evaluator_Executor);
 
         STATE_BYTE(f) = ST_PATH_FIRST_GROUP_EVALUATING;  // => first_is_in_out
         return R_CONTINUATION;
@@ -151,15 +150,14 @@ REB_R Path_Executor(REBFRM *f)
             fail ("GROUP! in PATH! used with GET or SET (use REDUCE/EVAL)");
 
         DECLARE_FRAME_AT_CORE (
-            blockframe,
+            block_frame,
             f_value,
             f_specifier,
             EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END
         );
 
         Init_Void(PVS_PICKER(f));  // in case all invisibles, as usual
-        Push_Frame(PVS_PICKER(f), blockframe);
-        INIT_F_EXECUTOR(blockframe, &Evaluator_Executor);
+        Push_Frame(PVS_PICKER(f), block_frame, &Evaluator_Executor);
 
         STATE_BYTE(f) = ST_PATH_PICKER_GROUP_EVALUATING;  // => picker_ready
         return R_CONTINUATION;
@@ -501,10 +499,9 @@ bool Eval_Path_Throws_Core(
         feed,
         flags | EVAL_FLAG_ALLOCATED_FEED | EVAL_FLAG_ROOT_FRAME
     );
-    INIT_F_EXECUTOR(pvs, &Path_Executor);
 
-    SET_END(out);
-    Push_Frame(out, pvs);
+    SET_END(out);  // !!! Necessary?
+    Push_Frame(out, pvs, &Path_Executor);
 
     PVS_OPT_SETVAL(pvs) = opt_setval;
     PVS_OPT_LABEL(pvs) = nullptr;
@@ -630,11 +627,9 @@ REBNATIVE(pick)
     }
 
     DECLARE_END_FRAME (pvs, EVAL_MASK_DEFAULT);
-    INIT_F_EXECUTOR(pvs, &Path_Executor);
+    Push_Frame(D_OUT, pvs, &Path_Executor);
 
-    Push_Frame(D_OUT, pvs);
     Move_Value(D_OUT, location);
-
     Move_Value(PVS_PICKER(pvs), ARG(picker));
 
     PVS_OPT_LABEL(pvs) = nullptr;  // e.g. :append/only returning APPEND
@@ -729,9 +724,8 @@ REBNATIVE(poke)
     }
 
     DECLARE_END_FRAME (pvs, EVAL_MASK_DEFAULT);
-    INIT_F_EXECUTOR(pvs, &Path_Executor);
+    Push_Frame(D_OUT, pvs, &Path_Executor);
 
-    Push_Frame(D_OUT, pvs);
     Move_Value(D_OUT, location);
 
     Move_Value(PVS_PICKER(pvs), ARG(picker));
@@ -986,7 +980,7 @@ REB_R MAKE_Path(
 
     DECLARE_FRAME_AT (f, arg, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
 
-    Push_Frame(nullptr, f);
+    Push_Frame_Core(nullptr, f);
 
     REBDSP dsp_orig = DSP;
 

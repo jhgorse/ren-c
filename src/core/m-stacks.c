@@ -98,8 +98,7 @@ void Startup_Frame_Stack(void)
     TRASH_POINTER_IF_DEBUG(TG_Frame_Feed_End.pending);
 
     DECLARE_FRAME (f, &TG_Frame_Feed_End, EVAL_MASK_DEFAULT);
-
-    Push_Frame(nullptr, f);
+    Push_Frame_Core(nullptr, f);
 
     TRASH_POINTER_IF_DEBUG(f->prior); // help catch enumeration past FS_BOTTOM
     TG_Bottom_Frame = f;

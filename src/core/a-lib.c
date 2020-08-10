@@ -1516,7 +1516,7 @@ REBVAL *RL_rebRescueWith(
     // up in the case of an error.  There must be a frame to attach them to.
     //
     DECLARE_END_FRAME (dummy, EVAL_MASK_DEFAULT);
-    Push_Frame(nullptr, dummy);
+    Push_Frame(nullptr, dummy, &Evaluator_Executor);
 
     struct Reb_Jump jump;
     PUSH_TRAP_SO_FAIL_CAN_JUMP_BACK_HERE(&jump);
@@ -1581,6 +1581,7 @@ REBVAL *RL_rebRescueWith(
     // internally to the system.  Some of these system routines accumulate
     // stack state, so Drop_Frame_Unbalanced() must be used.
     //
+    TRASH_CFUNC_IF_DEBUG(REBNAT, dummy->executor);
     Drop_Frame_Unbalanced(dummy);
 
     return result;

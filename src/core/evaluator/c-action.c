@@ -954,21 +954,7 @@ REB_R Action_Executor(REBFRM *f)
             // has already done it if it was necessary.
 
             DECLARE_FRAME (subframe, f->feed, flags);
-            subframe->executor = &Evaluator_Executor;
-
-            Push_Frame(f_arg, subframe);
-            //
-            // !!! If we were to recurse here, we would say:
-            //
-            //     bool threw = Eval_Throws(subframe);
-            //     Drop_Frame(subframe);
-            //     if (threw) {
-            //        Move_Value(f->out, f_arg);
-            //        goto abort_action;
-            //     }
-            //
-            // !!! But we want to avoid recursions.
-            //
+            Push_Frame(f_arg, subframe, &Evaluator_Executor);
             assert(STATE_BYTE(f) == ST_ACTION_FULFILLING_ARGS);
             return R_CONTINUATION; }
 
@@ -1060,10 +1046,8 @@ REB_R Action_Executor(REBFRM *f)
                     fail (Error_Void_Evaluation_Raw());  // must be quoted
 
                 DECLARE_FRAME (subframe, f->feed, flags);
-                subframe->executor = &Evaluator_Executor;
-
-                Push_Frame(f_arg, subframe);
-                bool threw = Eval_Throws(subframe);
+                Push_Frame(f_arg, subframe, &Evaluator_Executor);
+                bool threw = Trampoline_Throws(subframe);
                 Drop_Frame(subframe);
 
                 if (threw) {

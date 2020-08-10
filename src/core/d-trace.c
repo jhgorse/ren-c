@@ -237,8 +237,6 @@ bool Traced_Eval_Hook_Throws(REBFRM *f_stop)
     if (depth < 0 || depth >= Trace_Level)
         return Trampoline_Throws(f);  // (REPL uses to hide)
 
-    SHORTHAND (v, f->feed->value, NEVERNULL(const RELVAL*));
-
     if (depth > 10)
         depth = 10; // don't indent so far it goes off the screen
 
@@ -249,7 +247,7 @@ bool Traced_Eval_Hook_Throws(REBFRM *f_stop)
     PG_Trampoline_Throws = &Trampoline_Throws;
 
     if (not (
-        KIND_BYTE(*v) == REB_ACTION
+        KIND_BYTE(f_value) == REB_ACTION
         or (Trace_Flags & TRACE_FLAG_FUNCTION)
     )){
         REBVAL *err = rebRescue(cast(REBDNG*, &Trace_Eval_Dangerous), f);

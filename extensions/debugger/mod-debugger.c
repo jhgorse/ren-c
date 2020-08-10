@@ -234,10 +234,10 @@ static bool Reevaluate_In_Subframe_Maybe_Stale_Throws(
         f->feed,
         flags | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
     );
-    subframe->executor = &Evaluator_Executor;
+    Push_Frame(out, subframe, &Evaluator_Executor);
+
     subframe->u.reval.value = reval;
 
-    Push_Frame(out, subframe);
     bool threw = (*PG_Trampoline_Throws)(subframe);
     Drop_Frame(subframe);
 

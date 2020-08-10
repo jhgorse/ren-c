@@ -171,6 +171,7 @@ inline static int F_LINE(REBFRM *f) {
 
 inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
 {
+    assert(IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
     assert(STATE_BYTE(f) == 0);  // all executors expect INITIAL_ENTRY
     f->executor = executor;
 }
@@ -463,7 +464,7 @@ inline static void Free_Frame_Internal(REBFRM *f) {
 
 
 
-inline static void Push_Frame(REBVAL *out, REBFRM *f)
+inline static REBFRM *Push_Frame_Core(REBVAL *out, REBFRM *f)
 {
     assert(f->feed->value != nullptr);
 
@@ -526,13 +527,6 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
     }
   #endif
 
-    TRASH_POINTER_IF_DEBUG(f_original);
-
-    TRASH_POINTER_IF_DEBUG(f_opt_label);
-  #if defined(DEBUG_FRAME_LABELS)
-    TRASH_POINTER_IF_DEBUG(f->label_utf8);
-  #endif
-
   #if !defined(NDEBUG)
     //
     // !!! TBD: the relevant file/line update when f->feed->array changes
@@ -576,8 +570,16 @@ inline static void Push_Frame(REBVAL *out, REBFRM *f)
   #endif
 
     assert(f->varlist == nullptr);  // !!! Is this always true?
+
+    assert(IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
+
+    return f;
 }
 
+inline static void Push_Frame(REBVAL *out, REBFRM *f, REBNAT executor) {
+    Push_Frame_Core(out, f);
+    f->executor = executor;  // STATE_BYTE(f) may not be 0
+}
 
 inline static void UPDATE_EXPRESSION_START(REBFRM *f) {
     f->expr_index = f->feed->index; // this is garbage if EVAL_FLAG_VA_LIST
@@ -729,12 +731,22 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
     Init_Unreadable_Void(&f->spare);
     TRASH_POINTER_IF_DEBUG(f->out);
 
-    TRASH_POINTER_IF_DEBUG(f_opt_label);  // !!! apparently not redundant!
     TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // not defaulted
     f->varlist = nullptr;
 
     f->took_hold = false;  // !!! Maybe should be an EVAL_FLAG, see notes
     f->alloc_value_list = NOD(f);  // doubly link list, terminates in `f`
+
+    // !!! Now that executors are storing different data in the frame union,
+    // if that is to be "trashed" it should be done in a way that trashes
+    // the data area used by the largest struct in the union.  (This is a
+    // holdover from when the action frame fields were in every frame.)
+    //
+    TRASH_POINTER_IF_DEBUG(f_original);
+    TRASH_POINTER_IF_DEBUG(f_opt_label);
+  #if defined(DEBUG_FRAME_LABELS)
+    TRASH_POINTER_IF_DEBUG(f->label_utf8);
+  #endif
 
     // !!! Previously only the DSP was captured in f->baseline.dsp, but then
     // redundantly captured via a SNAP_STATE() in Push_Frame().  The
@@ -753,28 +765,6 @@ inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
     REBFRM * name = cast(REBFRM*, Try_Alloc_Node(FRM_POOL)); \
     Prep_Frame_Core(name, (feed), (flags));
 
-// !!! Initially, frames and feeds were C stack allocated and did not come
-// from memory pools.  That meant special macros were used to declare the
-// structure variables and initializations together (DECLARE_XXX).  This
-// This could no longer be used with "stackless" code in the C sense, so
-// more conventional inline functions can be used.  This routine tries to
-// start folding together common patterns to simplify callsites.
-//
-inline static REBFRM *Push_Continuation_At(REBVAL *out, REBVAL *any_array) {
-    DECLARE_FEED_AT (feed, any_array);
-
-    REBFRM *f = cast(REBFRM*, Try_Alloc_Node(FRM_POOL));
-    Prep_Frame_Core(
-        f,
-        feed,
-        EVAL_MASK_DEFAULT
-            | EVAL_FLAG_ALLOCATED_FEED
-            | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
-    );
-    INIT_F_EXECUTOR(f, &Evaluator_Executor);
-    Push_Frame(out, f);
-    return f;
-}
 
 #define DECLARE_FRAME_AT(name,any_array,flags) \
     DECLARE_FEED_AT (name##feed, (any_array)); \
@@ -787,6 +777,25 @@ inline static REBFRM *Push_Continuation_At(REBVAL *out, REBVAL *any_array) {
 #define DECLARE_END_FRAME(name,flags) \
     DECLARE_FRAME (name, &TG_Frame_Feed_End, (flags))
 
+// !!! Initially, frames and feeds were C stack allocated and did not come
+// from memory pools.  That meant special macros were used to declare the
+// structure variables and initializations together (DECLARE_XXX).  This
+// This could no longer be used with "stackless" code in the C sense, so
+// more conventional inline functions can be used.  This routine tries to
+// start folding together common patterns to simplify callsites.
+//
+inline static REBFRM *Push_Eval_Stepper_Continuation(
+    REBVAL *out,
+    REBVAL *any_array
+){
+    DECLARE_FRAME_AT (
+        f,
+        any_array,
+        EVAL_MASK_DEFAULT | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
+    );
+    Push_Frame(out, f, &Evaluator_Executor);
+    return f;
+}
 
 inline static void Begin_Action_Core(REBFRM *f, REBSTR *opt_label, bool enfix)
 {
@@ -796,7 +805,7 @@ inline static void Begin_Action_Core(REBFRM *f, REBSTR *opt_label, bool enfix)
     assert(IS_POINTER_TRASH_DEBUG(f_original));
     f_original = F_PHASE(f);
 
-    INIT_F_EXECUTOR(f, &Action_Executor);  // !!! Review where to do this
+    assert(f->executor == &Action_Executor);
 
     assert(IS_POINTER_TRASH_DEBUG(f_opt_label)); // only valid w/REB_ACTION
     assert(not opt_label or GET_SERIES_FLAG(opt_label, IS_STRING));
@@ -1189,8 +1198,7 @@ inline static REBFRM *Pushed_Continuation_With_Core(
         );
 
         Init_Void(out);  // in case all invisibles, as usual
-        Push_Frame(out, blockframe);
-        INIT_F_EXECUTOR(blockframe, &Evaluator_Executor);
+        Push_Frame(out, blockframe, &Evaluator_Executor);
         return blockframe; }
 
       case REB_ACTION: {
@@ -1209,7 +1217,7 @@ inline static REBFRM *Pushed_Continuation_With_Core(
 
         INIT_LINK_KEYSOURCE(c, NOD(subframe));
 
-        Push_Frame(out, subframe);
+        Push_Frame(out, subframe, &Action_Executor);
         subframe->varlist = CTX_VARLIST(c);
         subframe->rootvar = CTX_ARCHETYPE(c);
         F_PARAM(subframe) = CTX_KEYS_HEAD(c);
@@ -1242,8 +1250,7 @@ inline static REBFRM *Pushed_Continuation_With_Core(
         // keep evaluating?
         //
         DECLARE_END_FRAME (subframe, EVAL_MASK_DEFAULT);
-        INIT_F_EXECUTOR(subframe, &Brancher_Executor);
-        Push_Frame(out, subframe);
+        Push_Frame(out, subframe, &Brancher_Executor);
         Derelativize(F_SPARE(subframe), branch, branch_specifier);
         return subframe; }
 
@@ -1348,7 +1355,7 @@ inline static REBFRM *Pushed_Continuation_With_Core(
         assert(GET_SERIES_FLAG(c, MANAGED));
         assert(GET_SERIES_INFO(c, INACCESSIBLE));
 
-        Push_Frame(out, subframe);
+        Push_Frame(out, subframe, &Action_Executor);
         subframe->varlist = CTX_VARLIST(stolen);
         subframe->rootvar = CTX_ARCHETYPE(stolen);
         F_ARG(subframe) = F_ARGS_HEAD(subframe);

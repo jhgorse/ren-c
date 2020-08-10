@@ -136,9 +136,7 @@ inline static bool Was_Rightward_Continuation_Needed(
     // was necessary.
 
     DECLARE_FRAME (subframe, f->feed, flags);
-    subframe->executor = &Evaluator_Executor;
-
-    Push_Frame(f->out, subframe);
+    Push_Frame(f->out, subframe, &Evaluator_Executor);
 
     // We save the WORD!/PATH! to write in the spare slot of this frame.
     //
@@ -429,7 +427,7 @@ REB_R Evaluator_Executor(REBFRM *f)
     // Wasn't the at-end exception, so run normal enfix with right winning.
   blockscope {
     DECLARE_ACTION_SUBFRAME (subframe, f);
-    Push_Frame(f->out, subframe);
+    Push_Frame(f->out, subframe, &Action_Executor);
     Push_Action(subframe, VAL_ACTION(gotten), VAL_BINDING(gotten));
     Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(v));
 
@@ -498,7 +496,7 @@ REB_R Evaluator_Executor(REBFRM *f)
         REBSTR *opt_label = nullptr;  // not run from WORD!/PATH!, "nameless"
 
         DECLARE_ACTION_SUBFRAME (subframe, f);
-        Push_Frame(f->out, subframe);
+        Push_Frame(f->out, subframe, &Action_Executor);
         Push_Action(subframe, VAL_ACTION(v), VAL_BINDING(v));
         Begin_Prefix_Action(subframe, opt_label);
 
@@ -552,7 +550,7 @@ REB_R Evaluator_Executor(REBFRM *f)
 
           blockscope {
             DECLARE_ACTION_SUBFRAME (subframe, f);
-            Push_Frame(f->out, subframe);
+            Push_Frame(f->out, subframe, &Action_Executor);
             Push_Action(subframe, act, VAL_BINDING(gotten));
             Begin_Action_Core(
                 subframe,
@@ -681,17 +679,9 @@ REB_R Evaluator_Executor(REBFRM *f)
         DECLARE_FRAME_AT_CORE (subframe, v, f_specifier,
             EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END | EVAL_FLAG_KEEP_STALE_BIT
         );
-        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
-        Push_Frame(f->out, subframe);
+        Push_Frame(f->out, subframe, &Evaluator_Executor);
 
-        // Use Group_Executor() in the *current* frame level, whose feed is
-        // the parent of the GROUP!.  It will get the evaluative result of
-        // `subframe` (which is a new frame to use a new feed).  Again: that
-        // result may be stale, e.g. the f->out we started with.
-        //
-        assert(f->executor == &Evaluator_Executor);
         STATE_BYTE(f) = ST_EVALUATOR_EXECUTING_GROUP;
-
         return R_CONTINUATION; }
 
       group_execution_done: {
@@ -775,10 +765,9 @@ REB_R Evaluator_Executor(REBFRM *f)
             flags |= EVAL_FLAG_PUSH_PATH_REFINES;  // how we tell which it was
 
         DECLARE_FRAME (path_frame, path_feed, flags);
-        INIT_F_EXECUTOR(path_frame, &Path_Executor);
+        Push_Frame(f_spare, path_frame, &Path_Executor);
 
         SET_END(f_spare);  // !!! Necessary?
-        Push_Frame(f_spare, path_frame);
 
         PVS_OPT_LABEL(path_frame) = nullptr;  // state must be initialized
         PVS_OPT_SETVAL(path_frame) = nullptr;  // not a SET-PATH!
@@ -823,7 +812,7 @@ REB_R Evaluator_Executor(REBFRM *f)
                 fail ("Use `<-` with invisibles fetched from PATH!");
 
             DECLARE_ACTION_SUBFRAME (subframe, f);
-            Push_Frame(f->out, subframe);
+            Push_Frame(f->out, subframe, &Action_Executor);
             Push_Action(subframe, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
             Begin_Prefix_Action(subframe, opt_label);
 
@@ -904,13 +893,12 @@ REB_R Evaluator_Executor(REBFRM *f)
                 | EVAL_FLAG_ALLOCATED_FEED
                 | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
         );
-        INIT_F_EXECUTOR(path_frame, &Path_Executor);
+        Push_Frame(f_spare, path_frame, &Path_Executor);
 
         PVS_OPT_LABEL(path_frame) = nullptr;  // state must be initialized
         PVS_OPT_SETVAL(path_frame) = f->out;
 
         SET_END(f_spare);  // !!! Necessary?
-        Push_Frame(f_spare, path_frame);  // overwrites v
         STATE_BYTE(f) = ST_EVALUATOR_PROCESSING_SET_PATH;
         return R_CONTINUATION;
       }
@@ -1016,7 +1004,7 @@ REB_R Evaluator_Executor(REBFRM *f)
             // being experimented with letting it take more.)
             //
             DECLARE_ACTION_SUBFRAME (subframe, f);
-            Push_Frame(f->out, subframe);
+            Push_Frame(f->out, subframe, &Action_Executor);
             Push_Action(subframe, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
             Begin_Prefix_Action(subframe, nullptr);  // no label
 
@@ -1589,7 +1577,7 @@ REB_R Evaluator_Executor(REBFRM *f)
 
       blockscope {
         DECLARE_ACTION_SUBFRAME (subframe, f);
-        Push_Frame(f->out, subframe);
+        Push_Frame(f->out, subframe, &Action_Executor);
         Push_Action(
             subframe,
             VAL_ACTION(f_next_gotten),

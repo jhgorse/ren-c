@@ -263,11 +263,13 @@ void Pack_Subparse(
 ){
     assert(ANY_SERIES_KIND(CELL_KIND(VAL_UNESCAPED(input))));
 
-    Push_Frame(out, f);  // checks for C stack overflow
+    Push_Frame(out, f, &Action_Executor);
     Push_Action(f, NATIVE_ACT(subparse), UNBOUND);
     Begin_Prefix_Action(f, Canon(SYM_SUBPARSE));
     Drop_Action(f);  // keep frame around.
-    INIT_F_EXECUTOR(f, &Parse_Executor);
+
+    TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
+    INIT_F_EXECUTOR(f, &Parse_Executor);  // Now switch to parse executor...
 
 /*   f_param = END_NODE; // informs infix lookahead
     f_arg = m_cast(REBVAL*, END_NODE);
@@ -1676,13 +1678,12 @@ REB_R Parse_Executor(REBFRM *frame_) {
 
     if (IS_GROUP(P_RULE) or IS_GET_GROUP(P_RULE)) {
       process_group: {
-        DECLARE_FEED_AT_CORE (subfeed, P_RULE, P_RULE_SPECIFIER);
-        DECLARE_FRAME (subframe, subfeed,
+        DECLARE_FEED_AT_CORE (group_feed, P_RULE, P_RULE_SPECIFIER);
+        DECLARE_FRAME (group_frame, group_feed,
             EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END | EVAL_FLAG_ALLOCATED_FEED);
 
-        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
         assert(IS_END(P_OUT));
-        Push_Frame(P_OUT, subframe);
+        Push_Frame(P_OUT, group_frame, &Evaluator_Executor);
 
         Init_Logic(F_SPARE(f), IS_GET_GROUP(P_RULE));
         D_STATE_BYTE = ST_PARSE_EVALUATING_GROUP;

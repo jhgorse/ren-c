@@ -668,7 +668,7 @@ REBNATIVE(match)
         DECLARE_FRAME (
             f, parent->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME
         );
-        Push_Frame(D_OUT, f);
+        Push_Frame(D_OUT, f, &Action_Executor);
 
         REBSTR *opt_label;
         if (Get_If_Word_Or_Path_Throws(
@@ -685,6 +685,7 @@ REBNATIVE(match)
         Move_Value(test, D_OUT);
 
         if (not IS_ACTION(test)) {
+            TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
             Drop_Frame(f);
             if (
                 IS_WORD(test) or IS_GET_WORD(test) or IS_SET_WORD(test)
@@ -730,7 +731,7 @@ REBNATIVE(match)
 
         Begin_Prefix_Action(f, opt_label);
 
-        bool threw = Eval_Throws(f);
+        bool threw = Trampoline_Throws(f);
 
         Drop_Frame(f);
 
@@ -891,9 +892,8 @@ REBNATIVE(all)
     }
 
   initial_entry: {
-    REBFRM *f = Push_Continuation_At(D_OUT, ARG(block));
-    assert(f == FS_TOP);  // recovered via FS_TOP on eval_step_finished
-    UNUSED(f);
+    REBFRM *f = Push_Eval_Stepper_Continuation(D_OUT, ARG(block));
+    UNUSED(f);  // recovered on eval_step_finished
     Init_Nulled(D_OUT);  // so `all []` sees stale falsey value, returns null
     D_STATE_BYTE = ST_ALL_EVAL_STEP;
     return R_CONTINUATION;
@@ -948,9 +948,8 @@ REBNATIVE(any)
     }
 
   initial_entry: {
-    REBFRM *f = Push_Continuation_At(D_OUT, ARG(block));
-    assert(f == FS_TOP);  // recovered via FS_TOP on eval_step_finished
-    UNUSED(f);
+    REBFRM *f = Push_Eval_Stepper_Continuation(D_OUT, ARG(block));
+    UNUSED(f);  // recovered on eval_step_finished
     Init_Nulled(D_OUT);  // preload output with falsey value
     D_STATE_BYTE = ST_ANY_EVAL_STEP;
     return R_CONTINUATION;
@@ -1007,9 +1006,8 @@ REBNATIVE(none)
     }
 
   initial_entry: {
-    REBFRM *f = Push_Continuation_At(D_OUT, ARG(block));
-    assert(f == FS_TOP);  // recovered via FS_TOP on eval_step_finished
-    UNUSED(f);
+    REBFRM *f = Push_Eval_Stepper_Continuation(D_OUT, ARG(block));
+    UNUSED(f);  // recovered on eval_step_finished
     Init_Nulled(D_OUT);  // preload output with falsey value
     D_STATE_BYTE = ST_NONE_EVAL_STEP;
     return R_CONTINUATION;
@@ -1088,7 +1086,7 @@ REBNATIVE(case)
             | EVAL_FLAG_ALLOCATED_FEED
             | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
             | EVAL_FLAG_KEEP_STALE_BIT
-    );
+    );  // !!! Why involved w/stale?  Why not Push_Eval_Stepper_Continuation?
     f = subframe;
 
     if (IS_NULLED(predicate)) {
@@ -1122,7 +1120,7 @@ REBNATIVE(case)
 
     Init_Nulled(last_branch_result);  // default return result
 
-    Push_Frame(D_OUT, f);
+    Push_Frame_Core(D_OUT, f);
     goto evaluate_new_condition;
   }
 
@@ -1130,8 +1128,20 @@ REBNATIVE(case)
     Init_Nulled(D_OUT);  // Stale value if no condition found
 
     if (IS_ACTION(predicate)) {
-        Push_Action(f, VAL_ACTION(predicate), VAL_BINDING(predicate));
-        Begin_Prefix_Action(f, VAL_WORD_SPELLING(predicate_label));
+        DECLARE_FRAME(
+            predicate_f,
+            f->feed,
+            EVAL_MASK_DEFAULT | EVAL_FLAG_DELEGATE_CONTROL
+        );
+        Push_Frame(f->out, predicate_f, &Action_Executor);
+        Push_Action(
+            predicate_f,
+            VAL_ACTION(predicate),
+            VAL_BINDING(predicate)
+        );
+        Begin_Prefix_Action(predicate_f, VAL_WORD_SPELLING(predicate_label));
+
+        INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
     }
     else
         INIT_F_EXECUTOR(f, &Evaluator_Executor);
@@ -1171,7 +1181,15 @@ REBNATIVE(case)
             // means it should do whatever that does w.r.t. enfix, etc.
             // Review implications.
             //
-            f->executor = &Evaluator_Executor;
+            INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
+            
+            DECLARE_FRAME_AT_CORE (
+                group_frame,
+                f_value,
+                f_specifier,
+                EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END
+            );
+            Push_Frame(f->out, group_frame, &Evaluator_Executor);
 
             D_STATE_BYTE = ST_CASE_SKIPPING_GROUP_BRANCH;
             return R_CONTINUATION;
@@ -1200,7 +1218,7 @@ REBNATIVE(case)
     INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
     STATE_BYTE(f) = 1;  // !!! Currently can't leave a 0 byte w/push below
 
-    REBFRM *subframe = Pushed_Continuation_With_Core(
+    REBFRM *branch_frame = Pushed_Continuation_With_Core(
         D_OUT,
         f,
         0,  // don't delegate, don't catch throws
@@ -1208,8 +1226,8 @@ REBNATIVE(case)
         f_specifier,  // branch_specifier
         END_NODE  // with
     );
-    if (not subframe)  // was a quoted branch, or otherwise no frame needed
-        goto branch_was_evaluated;  // D_OUT was set easily
+    if (not branch_frame)  // was quoted branch, or otherwise done w/o frame
+        goto branch_was_evaluated;
 
     D_STATE_BYTE = ST_CASE_EVALUATING_BRANCH;
     return R_CONTINUATION;
@@ -1290,10 +1308,8 @@ REBNATIVE(switch)
     }
 
     DECLARE_FRAME_AT (f, ARG(cases), EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    SHORTHAND (v, f->feed->value, NEVERNULL(const RELVAL*));
-    SHORTHAND (specifier, f->feed->specifier, REBSPC*);
 
-    Push_Frame(nullptr, f);
+    Push_Frame_Core(nullptr, f);
     REBVAL *last_branch_result = ARG(cases); // frame holds cases, can reuse
     Init_Nulled(last_branch_result);
 
@@ -1303,9 +1319,9 @@ REBNATIVE(switch)
 
     Init_Nulled(D_OUT);  // fallout result if no branches run
 
-    while (NOT_END(*v)) {
+    while (NOT_END(f_value)) {
 
-        if (IS_BLOCK(*v) or IS_ACTION(*v)) {
+        if (IS_BLOCK(f_value) or IS_ACTION(f_value)) {
             Fetch_Next_Forget_Lookback(f);
             Init_Nulled(D_OUT);  // reset fallout output to null
             continue;
@@ -1325,7 +1341,7 @@ REBNATIVE(switch)
             goto threw;
 
         if (IS_END(D_OUT)) {  // nothing left, or was just COMMENT/etc.
-            assert(IS_END(*v));
+            assert(IS_END(f_value));
             Drop_Frame(f);
 
             assert(REF(all) or IS_NULLED(last_branch_result));
@@ -1382,21 +1398,21 @@ REBNATIVE(switch)
         // Skip ahead to try and find BLOCK!/ACTION! branch to take the match
         //
         while (true) {
-            if (IS_END(*v))
+            if (IS_END(f_value))
                 goto reached_end;
 
-            if (IS_BLOCK(*v)) {  // *v is RELVAL, can't Do_Branch
-                if (Do_Any_Array_At_Throws(D_OUT, *v, *specifier))
+            if (IS_BLOCK(f_value)) {  // *v is RELVAL, can't Do_Branch
+                if (Do_Any_Array_At_Throws(D_OUT, f_value, f_specifier))
                     goto threw;
                 break;
             }
 
-            if (IS_ACTION(*v)) {  // must have been COMPOSE'd in cases
+            if (IS_ACTION(f_value)) {  // must have been COMPOSE'd in cases
                 DECLARE_LOCAL (temp);
                 if (RunQ_Throws(
                     temp,
                     false,  // fully = false, e.g. arity-0 functions are ok
-                    rebU(SPECIFIC(*v)),  // actions don't need specifiers
+                    rebU(SPECIFIC(f_value)),  // actions don't need specifiers
                     D_OUT,
                     rebEND
                 )){
@@ -1422,8 +1438,7 @@ REBNATIVE(switch)
         Fetch_Next_Forget_Lookback(f);  // keep matching if /ALL
     }
 
-  reached_end:
-
+  reached_end: {
     Drop_Frame(f);
 
     if (not IS_NULLED(D_OUT)) // prioritize fallout result
@@ -1431,11 +1446,12 @@ REBNATIVE(switch)
 
     assert(REF(all) or IS_NULLED(last_branch_result));
     RETURN (last_branch_result);  // else last branch "falls out", may be null
+  }
 
-  threw:;
-
+  threw: {
     Drop_Frame(f);
     return R_THROWN;
+  }
 }
 
 

@@ -67,8 +67,7 @@ REBNATIVE(reduce)
             subframe,
             EVAL_MASK_DEFAULT | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
         );
-        subframe->executor = &Evaluator_Executor;
-        Push_Frame(D_OUT, subframe);
+        Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
         subframe->u.reval.value = v;  // !!! Push_Frame corrupts u ATM
 
@@ -84,9 +83,8 @@ REBNATIVE(reduce)
             | EVAL_FLAG_ALLOCATED_FEED
             | EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // reused for each step
     );
-    INIT_F_EXECUTOR(f, &Evaluator_Executor);
     SET_END(D_OUT);  // result if all invisibles
-    Push_Frame(D_OUT, f);
+    Push_Frame(D_OUT, f, &Evaluator_Executor);
 
     // We want the output newline status to mirror the newlines of the start
     // of the eval positions.  But when the evaluation callback happens, we
@@ -296,9 +294,8 @@ REB_R Composer_Executor(REBFRM *f) {
                 | EVAL_FLAG_ALLOCATED_FEED
                 | EVAL_FLAG_TO_END
         );
-        Push_Frame(D_OUT, groupframe);
+        Push_Frame(D_OUT, groupframe, &Evaluator_Executor);
 
-        INIT_F_EXECUTOR(groupframe, &Evaluator_Executor);
         Init_Nulled(f->out);  // want empty `()` to vanish as a null would
         return R_CONTINUATION;
     }
@@ -312,7 +309,7 @@ REB_R Composer_Executor(REBFRM *f) {
             EVAL_MASK_DEFAULT
                 | EVAL_FLAG_TRAMPOLINE_KEEPALIVE
         );
-        Push_Frame(D_OUT, deepframe);
+        Push_Frame(D_OUT, deepframe, &Composer_Executor);
 
         // Allow the subframe to pick up on the initial parameterization
         // of the COMPOSE (even though it has no varlist of its own).
@@ -323,8 +320,6 @@ REB_R Composer_Executor(REBFRM *f) {
         // and still be on the stack when it returns.  Everything else it
         // will get from the spare cell.  We'll know how much data by
         // the difference in DSPs.
-
-        INIT_F_EXECUTOR(deepframe, &Composer_Executor);
 
         STATE_BYTE(f) = ST_COMPOSER_RECURSING;
         return R_CONTINUATION;
@@ -553,13 +548,13 @@ REBNATIVE(compose)
         EVAL_MASK_DEFAULT |
             EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // allows stack accumulation
     );
-    Push_Frame(D_OUT, composer);  // writes TRUE if modified, FALSE if not
+    Push_Frame(D_OUT, composer, &Composer_Executor);
+        // ^-- writes TRUE to D_OUT if modified, FALSE if not
 
     // Allow the subframe to pick up on the initial parameterization
     // of the COMPOSE (even though it has no varlist of its own).
     //
     Init_Frame(F_SPARE(composer), Context_For_Frame_May_Manage(frame_));
-    INIT_F_EXECUTOR(composer, &Composer_Executor);
     D_STATE_BYTE = ST_COMPOSE_COMPOSING;
     return R_CONTINUATION;
   }

@@ -66,8 +66,7 @@ REBNATIVE(reeval)
         | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING);
 
     DECLARE_FRAME (subframe, frame_->feed, flags);
-    subframe->executor = &Evaluator_Executor;
-    Push_Frame(D_OUT, subframe);
+    Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
     subframe->u.reval.value = ARG(value);  // !!! Push frame corrupts u ATM
 
@@ -130,10 +129,7 @@ REBNATIVE(shove)
     if (not Is_Frame_Style_Varargs_May_Fail(&f, ARG(right)))
         fail ("SHOVE (<-) not implemented for MAKE VARARGS! [...] yet");
 
-    SHORTHAND (v, f->feed->value, NEVERNULL(const RELVAL*));
-    SHORTHAND (specifier, f->feed->specifier, REBSPC*);
-
-    if (IS_END(*v))  // ...shouldn't happen for WORD!/PATH! unless APPLY
+    if (IS_END(f_value))  // shouldn't happen for WORD!/PATH! unless APPLY
         RETURN (ARG(left));  // ...because evaluator wants `help <-` to work
 
     // It's best for SHOVE to do type checking here, as opposed to setting
@@ -155,12 +151,12 @@ REBNATIVE(shove)
     REBVAL *shovee = ARG(right); // reuse arg cell for the shoved-into
 
     REBSTR *opt_label = nullptr;
-    if (IS_WORD(*v) or IS_PATH(*v)) {
+    if (IS_WORD(f_value) or IS_PATH(f_value)) {
         if (Get_If_Word_Or_Path_Throws(
             D_OUT, // can't eval directly into arg slot
             &opt_label,
-            *v,
-            *specifier,
+            f_value,
+            f_specifier,
             false // !!! see above; false = don't push refinements
         )){
             return R_THROWN;
@@ -168,8 +164,8 @@ REBNATIVE(shove)
 
         Move_Value(shovee, D_OUT);
     }
-    else if (IS_GROUP(*v)) {
-        if (Do_Any_Array_At_Throws(D_OUT, *v, *specifier))
+    else if (IS_GROUP(f_value)) {
+        if (Do_Any_Array_At_Throws(D_OUT, f_value, f_specifier))
             return R_THROWN;
         if (IS_END(D_OUT))  // !!! need SHOVE frame for type error
             fail ("GROUP! passed to SHOVE did not evaluate to content");
@@ -177,7 +173,7 @@ REBNATIVE(shove)
         Move_Value(shovee, D_OUT);  // Note: can't eval directly into arg slot
     }
     else
-        Move_Value(shovee, SPECIFIC(*v));
+        Move_Value(shovee, SPECIFIC(f_value));
 
     if (not IS_ACTION(shovee) and not ANY_SET_KIND(VAL_TYPE(shovee)))
         fail ("SHOVE's immediate right must be ACTION! or SET-XXX! type");
@@ -299,8 +295,7 @@ REBNATIVE(shove)
             f->feed,
             EVAL_MASK_DEFAULT | FLAG_STATE_BYTE(ST_EVALUATOR_REEVALUATING)
         );
-        subframe->executor = &Evaluator_Executor;
-        Push_Frame(D_OUT, subframe);
+        Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
         // Nuance here is needed for `x: me + 10` vs. `x: my add 10`.  Review.
         //
@@ -322,7 +317,7 @@ REBNATIVE(shove)
         // at this time.
         //
         DECLARE_FRAME (subframe, f->feed, EVAL_MASK_DEFAULT);
-        Push_Frame(D_OUT, subframe);
+        Push_Frame(D_OUT, subframe, &Action_Executor);
 
         assert(NOT_EVAL_FLAG(subframe, RUNNING_ENFIX));
         Push_Action(
@@ -432,8 +427,7 @@ REBNATIVE(do)
         );
 
         Init_Void(D_OUT);  // in case all invisibles, as usual
-        Push_Frame(D_OUT, subframe);
-        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
+        Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
         SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
         STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is for initial_entry
@@ -478,11 +472,10 @@ REBNATIVE(do)
             return D_OUT;
 
         DECLARE_FRAME (
-            subframe, f->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME
-        );
+            subframe, f->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
+        Push_Frame_Core(D_OUT, subframe);
 
         bool threw;
-        Push_Frame(D_OUT, subframe);
         do {
             threw = Eval_Step_Maybe_Stale_Throws(D_OUT, subframe);
         } while (not threw and NOT_END(f->feed->value));
@@ -524,8 +517,7 @@ REBNATIVE(do)
         );
 
         Init_Void(D_OUT);  // in case all invisibles, as usual
-        Push_Frame(D_OUT, subframe);
-        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
+        Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
         SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
         STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 is for initial_entry
@@ -613,7 +605,6 @@ REBNATIVE(evaluate)
             EVAL_MASK_DEFAULT
                 | EVAL_FLAG_TRAMPOLINE_KEEPALIVE  // we need `index` of feed
         );
-        INIT_F_EXECUTOR(subframe, &Evaluator_Executor);
 
         // !!! We are evaluating into D_SPARE instead of D_OUT.  This isn't
         // strictly necessary, and it complicates error handling...but it's
@@ -622,7 +613,7 @@ REBNATIVE(evaluate)
         // to move into the D_OUT.  Review.
         //
         SET_END(D_SPARE);
-        Push_Frame(D_SPARE, subframe);
+        Push_Frame(D_SPARE, subframe, &Evaluator_Executor);
         SET_EVAL_FLAG(frame_, DISPATCHER_CATCHES);
 
         D_STATE_BYTE = ST_EVALUATE_STEPPING;
@@ -845,7 +836,7 @@ REBNATIVE(applique)
         flags |= EVAL_FLAG_FULLY_SPECIALIZED;
 
     DECLARE_END_FRAME (f, flags);  // up front (captures f->dsp)
-    Push_Frame(D_OUT, f);  // to avoid GC during `def` evaluation
+    Push_Frame(D_OUT, f, &Just_Use_Out_Executor);  // avoid GC in `def`
 
     // Argument can be a literal action (APPLY :APPEND) or a WORD!/PATH!.
     // If it is a path, we push the refinements to the stack so they can
@@ -941,6 +932,9 @@ REBNATIVE(applique)
         DS_DROP_TO(lowest_ordered_dsp); // zero refinements on stack, now
     }
 
+    TRASH_POINTER_IF_DEBUG(f->executor);
+    INIT_F_EXECUTOR(f, &Action_Executor);
+
     f->varlist = CTX_VARLIST(stolen);
     f->rootvar = CTX_ARCHETYPE(stolen);
     f_arg = F_ARGS_HEAD(f);  // start state (cues enumeration)
@@ -951,7 +945,7 @@ REBNATIVE(applique)
 
     Begin_Prefix_Action(f, opt_label);
 
-    bool action_threw = Eval_Throws(f);
+    bool action_threw = Trampoline_Throws(f);
     assert(action_threw or IS_END(f->feed->value));  // we started at END_FLAG
 
     Drop_Frame(f);

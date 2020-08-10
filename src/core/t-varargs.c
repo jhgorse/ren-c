@@ -180,7 +180,7 @@ bool Do_Vararg_Op_Maybe_End_Throws_Core(
                 | EVAL_FLAG_ROOT_FRAME;
 
             DECLARE_FRAME_AT (f_temp, shared, flags);
-            Push_Frame(nullptr, f_temp);
+            Push_Frame_Core(nullptr, f_temp);
 
             // Note: Eval_Step_In_Subframe_Throws() is not needed here because
             // this is a single use frame, whose state can be overwritten.

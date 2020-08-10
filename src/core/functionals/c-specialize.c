@@ -852,7 +852,7 @@ bool Make_Invocation_Frame_Throws(
 
     assert(F_BINDING(f) == VAL_BINDING(action));  // no invoke to change it
 
-    bool threw = Eval_Throws(f);
+    bool threw = Trampoline_Throws(f);
 
     CLEAR_EVAL_FLAG(f, FULFILL_ONLY);  // cleared by the evaluator
   #if !defined(NDEBUG)
@@ -876,6 +876,8 @@ bool Make_Invocation_Frame_Throws(
         return true;
 
     assert(IS_NULLED(f->out));  // for now, set due to EVAL_FLAG_FULFILL_ONLY
+
+    INIT_F_EXECUTOR(f, &Action_Executor);  // was trashed via execution
 
     return false;
 }
@@ -913,7 +915,7 @@ bool Make_Frame_From_Varargs_Throws(
     // REBFRM whose built FRAME! context we will steal
 
     DECLARE_FRAME (f, parent->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    Push_Frame(out, f);
+    Push_Frame(out, f, &Action_Executor);
 
     REBSTR *opt_label;
     if (Get_If_Word_Or_Path_Throws(
@@ -962,6 +964,7 @@ bool Make_Frame_From_Varargs_Throws(
     // May not be at end or thrown, e.g. (x: does lit y x = 'y)
     //
     DROP_GC_GUARD(action);  // before drop to balance at right time
+    TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
     Drop_Frame(f);
 
     // The exemplar may or may not be managed as of yet.  We want it
