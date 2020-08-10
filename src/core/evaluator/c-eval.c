@@ -126,8 +126,6 @@ inline static bool Was_Rightward_Continuation_Needed(
     REBFLGS flags = EVAL_MASK_DEFAULT
             | (f->flags.bits & EVAL_FLAG_FULFILLING_ARG);  // if f was, we are
 
-    SET_END(f->out);  // `1 x: comment "hi"` shouldn't set x to 1!
-
     if (Did_Init_Inert_Optimize_Complete(f->out, f->feed, &flags))
         return false;  // If eval not hooked, ANY-INERT! may not need a frame
 
