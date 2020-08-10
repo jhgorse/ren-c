@@ -427,7 +427,12 @@ STATIC_ASSERT(EVAL_FLAG_7_IS_TRUE == NODE_FLAG_CELL);
 STATIC_ASSERT(31 < 32);  // otherwise EVAL_FLAG_XXX too high
 
 
-// Default for Eval_Core_May_Throw() is just a single EVALUATE step.
+// All frames must include EVAL_MASK_DEFAULT in their flags.  This is not
+// done automatically for two reasons: one is to make the calls more clear
+// with `DECLARE_END_FRAME (f, EVAL_MASK_DEFAULT)` vs just saying 0.  Also,
+// it would permit there to be negative-default flags if some efficiency
+// trick favored the flag being truthy for its "unused" state, where you'd
+// say `DECLARE_END_FRAME (f, EVAL_MASK_DEFAULT & ~EVAL_FLAG_SOME_SETTING)`.
 //
 #define EVAL_MASK_DEFAULT \
     (EVAL_FLAG_0_IS_TRUE | EVAL_FLAG_4_IS_TRUE | EVAL_FLAG_7_IS_TRUE)

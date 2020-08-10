@@ -704,19 +704,7 @@ inline static void Drop_Frame(REBFRM *f)
 
 inline static void Prep_Frame_Core(REBFRM *f, REBFED *feed, REBFLGS flags) {
     assert(NOT_FEED_FLAG(feed, BARRIER_HIT));  // couldn't do anything
-
-    // We could OR the required true flags in automatically, but this helps
-    // to ensure that EVAL_MASK_DEFAULT was OR'd in...which may have some
-    // flags that want to be true by default but are optionally flipped off.
-    //
-    assert(
-        (flags & (
-            EVAL_FLAG_0_IS_TRUE
-            | EVAL_FLAG_1_IS_FALSE
-            | EVAL_FLAG_4_IS_TRUE
-            | EVAL_FLAG_7_IS_TRUE
-        )) == (EVAL_FLAG_0_IS_TRUE | EVAL_FLAG_4_IS_TRUE | EVAL_FLAG_7_IS_TRUE)
-    );
+    assert((flags & EVAL_MASK_DEFAULT) == EVAL_MASK_DEFAULT);
 
     if (f == nullptr) {  // e.g. a failed allocation
         if (flags & EVAL_FLAG_ALLOCATED_FEED)
