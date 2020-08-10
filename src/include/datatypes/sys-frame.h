@@ -563,8 +563,6 @@ inline static REBFRM *Push_Frame_Core(REBVAL *out, REBFRM *f)
         }
     }
 
-    SNAP_STATE(&f->baseline);  // see notes on `baseline` in Reb_Frame
-
   #if !defined(NDEBUG)
     f->initial_flags = f->flags.bits;
   #endif
