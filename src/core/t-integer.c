@@ -293,7 +293,7 @@ REBTYPE(Integer)
                 Move_Value(D_OUT, val2);  // Use as temp workspace
                 Move_Value(val2, val);
                 Move_Value(val, D_OUT);
-                return Run_Generic_Dispatch(val, frame_, verb); }
+                return R_REDO_UNCHECKED; }
 
             // Only type valid to subtract from, divide into, is decimal/money:
             case SYM_SUBTRACT:
