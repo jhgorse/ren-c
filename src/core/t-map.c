@@ -638,10 +638,11 @@ void MF_Map(REB_MOLD *mo, const REBCEL *v, bool form)
 //
 REBTYPE(Map)
 {
-    REBVAL *v = D_ARG(1);
-    REBMAP *map = VAL_MAP(v);
+    REBVAL *map = D_ARG(1);
+    REBMAP *m = VAL_MAP(map);
 
-    switch (VAL_WORD_SYM(verb)) {
+    REBSYM sym = VAL_WORD_SYM(verb);
+    switch (sym) {
       case SYM_REFLECT: {
         INCLUDE_PARAMS_OF_REFLECT;
         UNUSED(ARG(value));  // covered by `v`
@@ -649,27 +650,27 @@ REBTYPE(Map)
         REBVAL *property = ARG(property);
         switch (VAL_WORD_SYM(property)) {
           case SYM_LENGTH:
-            return Init_Integer(D_OUT, Length_Map(map));
+            return Init_Integer(D_OUT, Length_Map(m));
 
           case SYM_VALUES:
-            return Init_Block(D_OUT, Map_To_Array(map, 1));
+            return Init_Block(D_OUT, Map_To_Array(m, 1));
 
           case SYM_WORDS:
-            return Init_Block(D_OUT, Map_To_Array(map, -1));
+            return Init_Block(D_OUT, Map_To_Array(m, -1));
 
           case SYM_BODY:
-            return Init_Block(D_OUT, Map_To_Array(map, 0));
+            return Init_Block(D_OUT, Map_To_Array(m, 0));
 
           case SYM_TAIL_Q:
-            return Init_Logic(D_OUT, Length_Map(map) == 0);
+            return Init_Logic(D_OUT, Length_Map(m) == 0);
 
           default:
             break;
         }
         fail (Error_Cannot_Reflect(REB_MAP, property)); }
 
-    case SYM_FIND:
-    case SYM_SELECT: {
+      case SYM_FIND:
+      case SYM_SELECT: {
         INCLUDE_PARAMS_OF_FIND;
         UNUSED(PAR(series));  // covered by `v`
 
@@ -680,7 +681,7 @@ REBTYPE(Map)
             fail (Error_Bad_Refines_Raw());
 
         REBINT n = Find_Map_Entry(
-            map,
+            m,
             ARG(pattern),
             SPECIFIED,
             NULL,
@@ -693,7 +694,7 @@ REBTYPE(Map)
 
         Move_Value(
             D_OUT,
-            SPECIFIC(ARR_AT(MAP_PAIRLIST(map), ((n - 1) * 2) + 1))
+            SPECIFIC(ARR_AT(MAP_PAIRLIST(m), ((n - 1) * 2) + 1))
         );
 
         if (VAL_WORD_SYM(verb) == SYM_FIND)
@@ -701,12 +702,12 @@ REBTYPE(Map)
 
         return D_OUT; }
 
-    case SYM_PUT: {
+      case SYM_PUT: {
         INCLUDE_PARAMS_OF_PUT;
         UNUSED(ARG(series)); // extracted to `map`
 
         REBINT n = Find_Map_Entry(
-            map,
+            m,
             ARG(key),
             SPECIFIED,
             ARG(value),
@@ -717,16 +718,16 @@ REBTYPE(Map)
 
         RETURN (ARG(value)); }
 
-    case SYM_INSERT:
-    case SYM_APPEND: {
+      case SYM_INSERT:
+      case SYM_APPEND: {
         INCLUDE_PARAMS_OF_INSERT;
         UNUSED(PAR(series));
 
         REBVAL *value = ARG(value);
         if (IS_NULLED_OR_BLANK(value))
-            RETURN (v);  // don't fail on read only if it would be a no-op
+            RETURN (map);  // don't fail on read only if it would be a no-op
 
-        ENSURE_MUTABLE(v);
+        ENSURE_MUTABLE(map);
 
         if (REF(only) or REF(line) or REF(dup))
             fail (Error_Bad_Refines_Raw());
@@ -737,16 +738,16 @@ REBTYPE(Map)
         REBLEN len = Part_Len_May_Modify_Index(value, ARG(part));
 
         Append_Map(
-            map,
+            m,
             VAL_ARRAY(value),
             VAL_INDEX(value),
             VAL_SPECIFIER(value),
             len
         );
 
-        return Init_Map(D_OUT, map); }
+        RETURN (map); }
 
-    case SYM_COPY: {
+      case SYM_COPY: {
         INCLUDE_PARAMS_OF_COPY;
         UNUSED(PAR(value));
 
@@ -767,21 +768,22 @@ REBTYPE(Map)
             }
         }
 
-        return Init_Map(D_OUT, Copy_Map(map, types)); }
+        return Init_Map(D_OUT, Copy_Map(m, types)); }
 
-    case SYM_CLEAR:
-        ENSURE_MUTABLE(v);
+      case SYM_CLEAR: {
+        ENSURE_MUTABLE(map);
 
-        Reset_Array(MAP_PAIRLIST(map));
+        Reset_Array(MAP_PAIRLIST(m));
 
         // !!! Review: should the space for the hashlist be reclaimed?  This
         // clears all the indices but doesn't scale back the size.
         //
-        Clear_Series(MAP_HASHLIST(map));
+        Clear_Series(MAP_HASHLIST(m));
 
-        return Init_Map(D_OUT, map);
+        RETURN (map); }
 
-    default:
+
+      default:
         break;
     }
 

@@ -186,7 +186,7 @@ void MF_Action(REB_MOLD *mo, const REBCEL *v, bool form)
 //
 REBTYPE(Action)
 {
-    REBVAL *value = D_ARG(1);
+    REBVAL *action = D_ARG(1);
 
     switch (VAL_WORD_SYM(verb)) {
       case SYM_COPY: {
@@ -201,7 +201,7 @@ REBTYPE(Action)
             // !!! always "deep", allow it?
         }
 
-        REBACT *act = VAL_ACTION(value);
+        REBACT *act = VAL_ACTION(action);
 
         // Copying functions creates another handle which executes the same
         // code, yet has a distinct identity.  This means it would not be
@@ -239,7 +239,7 @@ REBTYPE(Action)
             Blit_Cell(dest, src);
         TERM_ARRAY_LEN(ACT_DETAILS(proxy), details_len);
 
-        return Init_Action_Maybe_Bound(D_OUT, proxy, VAL_BINDING(value)); }
+        return Init_Action_Maybe_Bound(D_OUT, proxy, VAL_BINDING(action)); }
 
       case SYM_REFLECT: {
         INCLUDE_PARAMS_OF_REFLECT;
@@ -249,7 +249,7 @@ REBTYPE(Action)
         REBSYM sym = VAL_WORD_SYM(property);
         switch (sym) {
           case SYM_BINDING: {
-            if (Did_Get_Binding_Of(D_OUT, value))
+            if (Did_Get_Binding_Of(D_OUT, action))
                 return D_OUT;
             return nullptr; }
 
@@ -258,36 +258,36 @@ REBTYPE(Action)
             bool just_words = (sym == SYM_WORDS);
             return Init_Block(
                 D_OUT,
-                Make_Action_Parameters_Arr(VAL_ACTION(value), just_words)
+                Make_Action_Parameters_Arr(VAL_ACTION(action), just_words)
             ); }
 
           case SYM_TYPESETS:
             return Init_Block(
                 D_OUT,
-                Make_Action_Typesets_Arr(VAL_ACTION(value))
+                Make_Action_Typesets_Arr(VAL_ACTION(action))
             );
 
           case SYM_BODY:
-            Get_Maybe_Fake_Action_Body(D_OUT, value);
+            Get_Maybe_Fake_Action_Body(D_OUT, action);
             return D_OUT;
 
           case SYM_TYPES: {
-            REBARR *copy = Make_Array(VAL_ACT_NUM_PARAMS(value));
+            REBARR *copy = Make_Array(VAL_ACT_NUM_PARAMS(action));
 
             // The typesets have a symbol in them for the parameters, and
             // ordinary typesets aren't supposed to have it--that's a
             // special feature for object keys and paramlists!  So clear
             // that symbol out before giving it back.
             //
-            REBVAL *param = VAL_ACT_PARAMS_HEAD(value);
-            REBVAL *typeset = SPECIFIC(ARR_HEAD(copy));
+            REBVAL *param = VAL_ACT_PARAMS_HEAD(action);
+            RELVAL *typeset = ARR_HEAD(copy);
             for (; NOT_END(param); ++param, ++typeset) {
                 assert(IS_PARAM(param));
                 RESET_CELL(typeset, REB_TYPESET, CELL_MASK_NONE);
                 VAL_TYPESET_LOW_BITS(typeset) = VAL_TYPESET_LOW_BITS(param);
                 VAL_TYPESET_HIGH_BITS(typeset) = VAL_TYPESET_HIGH_BITS(param);
             }
-            TERM_ARRAY_LEN(copy, VAL_ACT_NUM_PARAMS(value));
+            TERM_ARRAY_LEN(copy, VAL_ACT_NUM_PARAMS(action));
             assert(IS_END(typeset));
 
             return Init_Block(D_OUT, copy); }
@@ -299,7 +299,7 @@ REBTYPE(Action)
             // is a series with the file and line bits set, then that's what
             // it returns for FILE OF and LINE OF.
 
-            REBARR *details = VAL_ACT_DETAILS(value);
+            REBARR *details = VAL_ACT_DETAILS(action);
             if (ARR_LEN(details) < 1 or not ANY_ARRAY(ARR_HEAD(details)))
                 return nullptr;
 
@@ -317,7 +317,7 @@ REBTYPE(Action)
             return D_OUT; }
 
           default:
-            fail (Error_Cannot_Reflect(VAL_TYPE(value), property));
+            fail (Error_Cannot_Reflect(VAL_TYPE(action), property));
         }
         break; }
 

@@ -729,7 +729,8 @@ REBTYPE(Context)
     REBVAL *v = D_ARG(1);
     REBCTX *c = VAL_CONTEXT(v);
 
-    switch (VAL_WORD_SYM(verb)) {
+    REBSYM sym = VAL_WORD_SYM(verb);
+    switch (sym) {
       case SYM_REFLECT: {
         INCLUDE_PARAMS_OF_REFLECT;
         UNUSED(ARG(value));  // covered by `v`
@@ -738,8 +739,8 @@ REBTYPE(Context)
             break;
 
         REBVAL *property = ARG(property);
-        REBSYM sym = VAL_WORD_SYM(property);
-        if (sym == SYM_ACTION) {
+        REBSYM prop = VAL_WORD_SYM(property);
+        if (prop == SYM_ACTION) {
             //
             // Currently this can be answered for any frame, even if it is
             // expired...though it probably shouldn't do this unless it's
@@ -756,7 +757,7 @@ REBTYPE(Context)
 
         REBFRM *f = CTX_FRAME_MAY_FAIL(c);
 
-        switch (sym) {
+        switch (prop) {
           case SYM_FILE: {
             REBSTR *file = F_FILE(f);
             if (not file)

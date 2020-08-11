@@ -445,7 +445,7 @@ REB_R PD_Varargs(
 //
 REBTYPE(Varargs)
 {
-    REBVAL *value = D_ARG(1);
+    REBVAL *varargs = D_ARG(1);
 
     switch (VAL_WORD_SYM(verb)) {
     case SYM_REFLECT: {
@@ -460,7 +460,7 @@ REBTYPE(Varargs)
             if (Do_Vararg_Op_Maybe_End_Throws(
                 D_OUT,
                 VARARG_OP_TAIL_Q,
-                value
+                varargs
             )){
                 assert(false);
                 return R_THROWN;
@@ -487,7 +487,7 @@ REBTYPE(Varargs)
             if (Do_Vararg_Op_Maybe_End_Throws(
                 D_OUT,
                 VARARG_OP_TAKE,
-                value
+                varargs
             )){
                 return R_THROWN;
             }
@@ -509,7 +509,7 @@ REBTYPE(Varargs)
             if (Do_Vararg_Op_Maybe_End_Throws(
                 D_OUT,
                 VARARG_OP_TAKE,
-                value
+                varargs
             )){
                 return R_THROWN;
             }

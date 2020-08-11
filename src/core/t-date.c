@@ -892,16 +892,15 @@ REB_R PD_Date(
 //
 REBTYPE(Date)
 {
-    REBVAL *v = D_ARG(1);
-    assert(IS_DATE(v));
+    REBVAL *date = D_ARG(1);
 
     REBSYM sym = VAL_WORD_SYM(verb);
 
-    REBYMD date = VAL_DATE(v);
-    REBLEN day = VAL_DAY(v) - 1;
-    REBLEN month = VAL_MONTH(v) - 1;
-    REBLEN year = VAL_YEAR(v);
-    REBI64 secs = Does_Date_Have_Time(v) ? VAL_NANO(v) : NO_DATE_TIME;
+    REBYMD ymd = VAL_DATE(date);
+    REBLEN day = VAL_DAY(date) - 1;
+    REBLEN month = VAL_MONTH(date) - 1;
+    REBLEN year = VAL_YEAR(date);
+    REBI64 secs = Does_Date_Have_Time(date) ? VAL_NANO(date) : NO_DATE_TIME;
 
     if (sym == SYM_SUBTRACT or sym == SYM_ADD) {
         REBVAL *arg = D_ARG(2);
@@ -909,7 +908,7 @@ REBTYPE(Date)
 
         if (type == REB_DATE) {
             if (sym == SYM_SUBTRACT)
-                return Init_Integer(D_OUT, Diff_Date(date, VAL_DATE(arg)));
+                return Init_Integer(D_OUT, Diff_Date(ymd, VAL_DATE(arg)));
         }
         else if (type == REB_TIME) {
             if (sym == SYM_ADD) {
@@ -955,7 +954,7 @@ REBTYPE(Date)
     else {
         switch (sym) {
           case SYM_COPY:
-            RETURN (v);  // immediate type, just copy bits
+            RETURN (date);  // immediate type, just copy bits
 
           case SYM_EVEN_Q:
             return Init_Logic(D_OUT, ((~day) & 1) == 0);
@@ -978,7 +977,7 @@ REBTYPE(Date)
                 //
                 Set_Random(
                     (cast(REBI64, year) << 48)
-                    + (cast(REBI64, Julian_Date(date)) << 32)
+                    + (cast(REBI64, Julian_Date(ymd)) << 32)
                     + secs
                 );
                 return nullptr;
@@ -1034,16 +1033,16 @@ REBTYPE(Date)
     Normalize_Time(&secs, &day);
 
   fix_date:
-    date = Normalize_Date(
+    ymd = Normalize_Date(
         day,
         month,
         year,
-        Does_Date_Have_Zone(v) ? VAL_ZONE(v) : 0
+        Does_Date_Have_Zone(date) ? VAL_ZONE(date) : 0
     );
 
   set_date:
     RESET_CELL(D_OUT, REB_DATE, CELL_MASK_NONE);
-    VAL_DATE(D_OUT) = date;
+    VAL_DATE(D_OUT) = ymd;
     PAYLOAD(Time, D_OUT).nanoseconds = secs; // may be NO_DATE_TIME
     if (secs == NO_DATE_TIME)
         VAL_DATE(D_OUT).zone = NO_DATE_ZONE;
