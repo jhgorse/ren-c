@@ -206,8 +206,14 @@ inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
 //
 // If a varlist does not become managed over the course of its usage, it is
 // put into a list of reusable ones.  You can reuse the series node identity
-// (avoiding the call to Alloc_Series_Node()) and also possibly the data
-// (avoiding the call to Did_Series_Data_Alloc() and other initialization).
+// (avoiding the call to Alloc_Series_Node()) and also possibly the data.
+//
+// This optimization is not necessarily trivial, because freeing even an
+// unmanaged series has cost...in particular with Decay_Series().  Removing
+// it and changing to just use `GC_Kill_Series()` degrades performance on
+// simple examples like `x: 0 loop 1000000 [x: x + 1]` by at least 20%.
+// Broader studies might reveal better approaches--but point is, it does at
+// least do *something*.
 //
 
 inline static bool Did_Reuse_Varlist_Of_Unknown_Size(
