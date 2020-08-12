@@ -2,15 +2,10 @@
 ;
 ; https://trello.com/c/dWQnsspG
 
-(
-    1 = do [comment "a" 1]
-)
-(
-    1 = do [1 comment "a"]
-)
-(
-    void = do [comment "a"]
-)
+(1 = do [comment "a" 1])
+(1 = do [1 comment "a"])
+
+(void = do [comment "a"])
 
 (
     val: <overwritten>
@@ -42,15 +37,10 @@
 ;
 ; https://trello.com/c/snnG8xwW
 
-(
-    1 = do [elide "a" 1]
-)
-(
-    1 = do [1 elide "a"]
-)
-(
-    void = do [elide "a"]
-)
+(1 = do [elide "a" 1])
+(1 = do [1 elide "a"])
+
+(void = do [elide "a"])
 
 (
     error? trap [
@@ -313,5 +303,34 @@
     did all [
         b = []
         not new-line? b
+    ]
+)
+
+
+; RETURN should work in invisible functions, and error if given an argument
+
+(
+    var: null
+    foo: func [return: [] x] [
+       var: x
+       (return)
+       var: <after>
+    ]
+    did all [
+        3 = (1 + 2 foo <before>)
+        var = <before>
+    ]
+)
+
+(
+    var: null
+    foo: func [return: [] x] [
+       var: x
+       return
+       var: <after>  ; subtly, RETURN picks this up as the arg (an error)
+    ]
+    did all [
+        'bad-return-type = pick trap [1 + 2 foo <before>] 'id
+        var = <after>
     ]
 )

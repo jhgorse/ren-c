@@ -197,25 +197,11 @@ REB_R Returner_Dispatcher(REBFRM *f)
 //  Elider_Dispatcher: C
 //
 // Used by "invisible" functions (who in their spec say `RETURN: []`).  Runs
-// block but with no net change to f->out.
-//
-// !!! Review enforcement of arity-0 return in invisibles only!
+// block but with no net change to f->out.  Accomplishes this by evaluating
+// the body into the frame's "spare" cell, where it won't have an effect.
 //
 REB_R Elider_Dispatcher(REBFRM *f)
 {
-    // It might seem that since we don't want the result, we could instruct a
-    // delegation to write it into the spare where it won't affect f->out.
-    // That way the body could very efficiently be:
-    //
-    //   `return Init_Delegation_Details_0(F_SPARE(f), f);`
-    //
-    // But the current RETURN implementation climbs the stack and trashes
-    // f->out as it goes.  Not only that, there's a rule that all invisibles
-    // return R_INVISIBLE...so a pure delegation would have to deal with
-    // that.  The current workaround is to save `f->out` into the frame's
-    // spare cell, request a callback after the continuation is done, and put
-    // it back.  Hopefully a better answer will come along.
-
     enum {
         ST_ELIDER_INITIAL_ENTRY = 0,
         ST_ELIDER_RUNNING_BODY
@@ -228,29 +214,34 @@ REB_R Elider_Dispatcher(REBFRM *f)
     }
 
   initial_entry: {
-    if (IS_END(f->out)) {  // could happen :-/ e.g. `do [comment "" ...]`
-        Init_Void(F_SPARE(f));
-        SET_CELL_FLAG(F_SPARE(f), SPARE_MARKED_END);  // be tricky
-    }
-    else {
-        Move_Value(F_SPARE(f), f->out);  // cache, mark first step done
-        if (GET_CELL_FLAG(f->out, UNEVALUATED))
-            SET_CELL_FLAG(F_SPARE(f), UNEVALUATED);  // proxy eval flag
-    }
-    Push_Continuation_Details_0(f->out, f);  // re-entry after eval
+    Push_Continuation_Details_0(f_spare, f);  // re-entry after eval
     STATE_BYTE(f) = ST_ELIDER_RUNNING_BODY;
+    SET_EVAL_FLAG(f, DISPATCHER_CATCHES);
     return R_CONTINUATION;
   }
 
   body_ran: {
-    if (GET_CELL_FLAG(F_SPARE(f), SPARE_MARKED_END)) {
-        assert(IS_VOID(F_SPARE(f)));
-        SET_END(f->out);
-    } else {
-        Move_Value(f->out, F_SPARE(f));  // restore output
-        if (GET_CELL_FLAG(F_SPARE(f), UNEVALUATED))
-            SET_CELL_FLAG(f->out, UNEVALUATED);
+    if (Is_Throwing(f)) {
+        //
+        // RETURN is implemented via UNWIND.  We want RETURN to work in an
+        // invisible function, but it has to still return R_INVISIBLE...so
+        // it can't use the typical return code in Action_Executor().
+        //
+        const REBVAL *label = VAL_THROWN_LABEL(f_spare);
+        if (
+            IS_ACTION(label)
+            and VAL_ACTION(label) == NATIVE_ACT(unwind)
+            and VAL_BINDING(label) == NOD(f->varlist)
+        ){
+            CATCH_THROWN(f_spare, f_spare);
+            assert(IS_NULLED(f_spare));  // RETURN errors if arg passed 
+            return R_INVISIBLE;
+        }
+
+        Move_Value(f_out, f_spare);
+        return R_THROWN;
     }
+
     return R_INVISIBLE;  // invisibles should always return this
   }
 }

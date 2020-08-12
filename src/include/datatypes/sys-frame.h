@@ -1454,16 +1454,7 @@ inline static REBFRM *Push_Continuation_Details_0_Core(
     REBFRM *f,
     REBFLGS flags
 ){
-    // !!! At the moment, continuations are assumed to write to the same
-    // out cell as the frame.  This inhibits certain desirable features--like
-    // Elider_Dispatcher() being able to write to its spare cell directly.
-    // It should be remembered that evaluations can't be done into movable
-    // memory cells, nor into user-visible cells (e.g. action arguments)
-    // because output cells go through invalid states like END.  Also the
-    // `Is_Throwing()` primitive currently is relative to a frame and
-    // assumes you're asking about the f->out specifically.  Review.
-    //
-    assert(out == f->out);
+    assert(out == f_out or out == f_spare);  // !!! relax this?
 
     REBACT *phase = F_PHASE(f);
     REBARR *details = ACT_DETAILS(phase);
