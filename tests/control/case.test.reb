@@ -106,11 +106,17 @@
 )
 
 
-; New feature for specifying predicates with a refinement
+; Work in progress new feature for specifying predicates with a refinement
 
-(<a> = case /not [1 = 2 [<a>]])
-(<b> = case /even? [1 [<a>] 2 [<b>]])
-(<b> = case /not [1 = 1 [<a>] default [<b>]])
+(<a> = case/predicate [1 = 2 [<a>]] :not?)
+(<b> = case/predicate [1 [<a>] 2 [<b>]] :even?)
+
+; !!! This happens due to the trick that DEFAULT uses to work with fallout.
+; It's not clear how to resolve it to get the correct behavior:
+;
+; https://forum.rebol.info/t/default-now-usable-in-case-switch/739/3
+;
+(#[false] = case/predicate [1 = 1 [<a>] default [<b>]] :not?)
 
 ; Errors on bad branches
 (

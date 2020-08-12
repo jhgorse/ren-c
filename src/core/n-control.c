@@ -1054,8 +1054,8 @@ REBNATIVE(case)
 
     REBFRM *f;
     REBVAL *predicate = ARG(predicate);  // will be canonized on first call
-    REBVAL *last_branch_result = ARG(return);  // don't need return cell
-    REBVAL *predicate_label = ARG(cases);  // can reuse, `f` frame holds cases
+    REBVAL *predicate_label = ARG(return);  // can reuse
+    // Note: could also reuse ARG(cases) after frame is initialized w/them
 
     enum {
         ST_CASE_INITIAL_ENTRY = 0,
@@ -1072,9 +1072,25 @@ REBNATIVE(case)
     assert(IS_POINTER_TRASH_DEBUG(f->executor));
 
     switch (D_STATE_BYTE) {
-      case ST_CASE_EVALUATING_CONDITION: goto condition_was_evaluated;
-      case ST_CASE_SKIPPING_GROUP_BRANCH: goto evaluate_new_condition;
-      case ST_CASE_EVALUATING_BRANCH: goto branch_was_evaluated;
+      case ST_CASE_EVALUATING_CONDITION:
+        if (Is_Throwing(f)) {
+            Abort_Frame(f);
+            Move_Value(D_OUT, D_SPARE);
+            return R_THROWN;
+        }
+        goto condition_was_evaluated;
+
+      case ST_CASE_SKIPPING_GROUP_BRANCH:
+        if (Is_Throwing(f)) {
+            Abort_Frame(f);
+            Move_Value(D_OUT, D_SPARE);
+            return R_THROWN;
+        }
+        goto evaluate_new_condition;
+
+      case ST_CASE_EVALUATING_BRANCH:  // wrote to D_OUT, auto-throw-handled
+        goto branch_was_evaluated;
+
       default: assert(false);
     }
 
@@ -1118,14 +1134,26 @@ REBNATIVE(case)
             Init_Word(predicate_label, VAL_TYPESET_STRING(PAR(predicate)));
     }
 
-    Init_Nulled(last_branch_result);  // default return result
+    Init_Nulled(D_OUT);  // default return result
 
-    Push_Frame_Core(D_OUT, f);
+    Push_Frame_Core(nullptr, f);
     goto evaluate_new_condition;
   }
 
   evaluate_new_condition: {
-    Init_Nulled(D_OUT);  // Stale value if no condition found
+    //
+    // Before evaluating the condition, we may be at an end point...but we
+    // also might be at a point that will evaluate away before the end, e.g.:
+    //
+    //     case [false [1] comment {vaporizes}]
+    //
+    // Test for end here as shortcut, but test again after evaluating.
+    //
+    if (IS_END(f_value))
+        goto reached_end;
+
+    f->out = D_SPARE;
+    SET_END(D_SPARE);  // Stale value if no condition found
 
     if (IS_ACTION(predicate)) {
         DECLARE_FRAME(
@@ -1133,7 +1161,7 @@ REBNATIVE(case)
             f->feed,
             EVAL_MASK_DEFAULT | EVAL_FLAG_DELEGATE_CONTROL
         );
-        Push_Frame(f->out, predicate_f, &Action_Executor);
+        Push_Frame(D_SPARE, predicate_f, &Action_Executor);
         Push_Action(
             predicate_f,
             VAL_ACTION(predicate),
@@ -1141,25 +1169,28 @@ REBNATIVE(case)
         );
         Begin_Prefix_Action(predicate_f, VAL_WORD_SPELLING(predicate_label));
 
+        STATE_BYTE(f) = 0;  // !!! has to be 0 to set
         INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
+        STATE_BYTE(f) = 1;  // !!! Must be nonzero, review
     }
     else
         INIT_F_EXECUTOR(f, &Evaluator_Executor);
 
+    SET_EVAL_FLAG(frame_, DISPATCHER_CATCHES);  // writing D_SPARE, not D_OUT
     D_STATE_BYTE = ST_CASE_EVALUATING_CONDITION;
     return R_CONTINUATION;
   }
 
   condition_was_evaluated: {
-    if (GET_CELL_FLAG(D_OUT, OUT_MARKED_STALE)) {
-        CLEAR_CELL_FLAG(D_OUT, OUT_MARKED_STALE);
+    if (IS_END(D_SPARE))
+        goto reached_end;
+
+    if (IS_END(f_value)) {
+        Move_Value(D_OUT, D_SPARE);  // "fallout" (last condition is result)
         goto reached_end;
     }
 
-    if (IS_END(f_value))
-        goto reached_end;
-
-    if (not IS_TRUTHY(D_OUT)) {
+    if (not IS_TRUTHY(D_SPARE)) {
         if (
             IS_BLOCK(f_value)
             or IS_ACTION(f_value)
@@ -1181,16 +1212,24 @@ REBNATIVE(case)
             // means it should do whatever that does w.r.t. enfix, etc.
             // Review implications.
             //
+            STATE_BYTE(f) = 0;  // !!! Must be zero, review
             INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
-            
+
             DECLARE_FRAME_AT_CORE (
                 group_frame,
                 f_value,
                 f_specifier,
                 EVAL_MASK_DEFAULT | EVAL_FLAG_TO_END
             );
-            Push_Frame(f->out, group_frame, &Evaluator_Executor);
+            Push_Frame(
+                f_spare,
+                group_frame,
+                &Evaluator_Executor
+            );
 
+            Fetch_Next_Forget_Lookback(f);  // skip group we're now evaluating
+
+            SET_EVAL_FLAG(frame_, DISPATCHER_CATCHES);  // writing D_SPARE
             D_STATE_BYTE = ST_CASE_SKIPPING_GROUP_BRANCH;
             return R_CONTINUATION;
         }
@@ -1216,6 +1255,7 @@ REBNATIVE(case)
     assert(IS_POINTER_TRASH_DEBUG(f->executor));
     STATE_BYTE(f) = 0;
     INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
+    f->out = D_OUT;
     STATE_BYTE(f) = 1;  // !!! Currently can't leave a 0 byte w/push below
 
     REBFRM *branch_frame = Pushed_Continuation_With_Core(
@@ -1241,14 +1281,13 @@ REBNATIVE(case)
         fail ("Stale value seen, should not be possible here.");
     }
 
-    Voidify_If_Nulled(D_OUT); // null is reserved for no branch taken
+    Voidify_If_Nulled(D_OUT);  // null is reserved for no branch taken
 
     if (not REF(all)) {
         Drop_Frame(f);
         return D_OUT;
     }
 
-    Move_Value(last_branch_result, D_OUT);
     Fetch_Next_Forget_Lookback(f);  // keep matching if /ALL
     goto evaluate_new_condition;
   }
@@ -1260,11 +1299,7 @@ REBNATIVE(case)
     //
     //     case /not [1 < 2 [...] 3 < 4 [...] 10 + 20] = 30
     //
-    if (not IS_NULLED(D_OUT))  // prioritize fallout result
-        return D_OUT;
-
-    assert(REF(all) or IS_NULLED(last_branch_result));
-    RETURN (last_branch_result);  // else last branch "falls out", may be null
+    return D_OUT;
   }
 }
 
