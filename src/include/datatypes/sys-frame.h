@@ -118,6 +118,10 @@ inline static int F_LINE(REBFRM *f) {
 #define F_NUM_ARGS(f) \
     (cast(REBSER*, (f)->varlist)->content.dynamic.used - 1)  // minus rootvar
 
+#define f_out F_OUT(f)
+#define F_OUT(f) \
+    (f)->out
+
 #define f_spare F_SPARE(f)
 #define F_SPARE(f) \
     cast(REBVAL*, &(f)->spare)
@@ -131,6 +135,7 @@ inline static int F_LINE(REBFRM *f) {
 #define INIT_F_PHASE(f,phase) \
     INIT_VAL_CONTEXT_PHASE((f)->rootvar, (phase))
 
+#define f_binding F_BINDING(f)
 #define F_BINDING(f) \
     EXTRA(Binding, (f)->rootvar).node
 

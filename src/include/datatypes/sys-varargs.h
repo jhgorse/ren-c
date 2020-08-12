@@ -92,7 +92,7 @@ inline static bool Is_Block_Style_Varargs(
 
 
 inline static bool Is_Frame_Style_Varargs_Maybe_Null(
-    REBFRM **f_out,
+    REBFRM **out_f,
     const REBCEL *vararg
 ){
     assert(CELL_KIND(vararg) == REB_VARARGS);
@@ -101,23 +101,23 @@ inline static bool Is_Frame_Style_Varargs_Maybe_Null(
         // "Ordinary" case... use the original frame implied by the VARARGS!
         // (so long as it is still live on the stack)
 
-        *f_out = CTX_FRAME_IF_ON_STACK(CTX(EXTRA(Binding, vararg).node));
+        *out_f = CTX_FRAME_IF_ON_STACK(CTX(EXTRA(Binding, vararg).node));
         return true;
     }
 
-    *f_out = nullptr; // avoid compiler warning in -Og build
+    *out_f = nullptr; // avoid compiler warning in -Og build
     return false; // it's a block varargs, made via MAKE VARARGS!
 }
 
 
 inline static bool Is_Frame_Style_Varargs_May_Fail(
-    REBFRM **f_out,
+    REBFRM **out_f,
     const RELVAL *vararg
 ){
-    if (not Is_Frame_Style_Varargs_Maybe_Null(f_out, vararg))
+    if (not Is_Frame_Style_Varargs_Maybe_Null(out_f, vararg))
         return false;
 
-    if (not *f_out)
+    if (not *out_f)
         fail (Error_Frame_Not_On_Stack_Raw());
 
     return true;

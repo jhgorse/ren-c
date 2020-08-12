@@ -73,7 +73,7 @@ static REB_R Chainer_Dispatcher(REBFRM *f)
     // Extract the first function, itself which might be a chain.
     //
     INIT_F_PHASE(f, VAL_ACTION(chained));
-    F_BINDING(f) = VAL_BINDING(chained);
+    f_binding = VAL_BINDING(chained);
 
     return R_REDO_UNCHECKED;  // signatures should match
 }

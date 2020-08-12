@@ -577,7 +577,7 @@ REB_R Iterator_Dispatcher(REBFRM *f) {
 
     REBVAL *data = SPECIFIC(ARR_AT(details, 0));
 
-    REBNOD *binding = F_BINDING(f);
+    REBNOD *binding = f_binding;
     if (not binding) {
         REBVAL *item = rebValue("first", data, rebEND);
         Move_Value(f->out, REIFY_NULL(item));

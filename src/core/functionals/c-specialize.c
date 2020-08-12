@@ -544,7 +544,7 @@ REB_R Specializer_Dispatcher(REBFRM *f)
     assert(IS_FRAME(exemplar));
 
     INIT_F_PHASE(f, VAL_PHASE(exemplar));
-    F_BINDING(f) = VAL_BINDING(exemplar);
+    f_binding = VAL_BINDING(exemplar);
 
     return R_REDO_UNCHECKED; // redo uses the updated phase and binding
 }

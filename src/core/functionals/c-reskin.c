@@ -89,7 +89,7 @@ REBNATIVE(skinner_return_helper)
     // !!! Same code as in Returner_Dispatcher()...should it be moved to a
     // shared inline location?
 
-    REBACT *phase = ACT(F_BINDING(f));
+    REBACT *phase = ACT(f_binding);
 
     REBVAL *param = ACT_PARAMS_HEAD(phase);
     assert(VAL_PARAM_SYM(param) == SYM_RETURN);

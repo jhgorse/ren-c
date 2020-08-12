@@ -84,7 +84,7 @@ REB_R Block_Dispatcher(REBFRM *f)
     assert(IS_BLOCK(block) and VAL_INDEX(block) == 0);
 
     if (IS_SPECIFIC(block)) {
-        if (F_BINDING(f) == UNBOUND) {
+        if (f_binding == UNBOUND) {
             if (Do_Any_Array_At_Throws(f->out, SPECIFIC(block), SPECIFIED))
                 return R_THROWN;
             return f->out;

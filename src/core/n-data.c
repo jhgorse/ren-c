@@ -417,7 +417,7 @@ bool Did_Get_Binding_Of(REBVAL *out, const REBVAL *v)
         REBFRM *f = CTX_FRAME_IF_ON_STACK(c);
         if (f) {
             INIT_VAL_CONTEXT_PHASE(out, F_PHASE(f));
-            INIT_BINDING(out, F_BINDING(f));
+            INIT_BINDING(out, f_binding);
         }
         else {
             // !!! Assume the canon FRAME! value in varlist[0] is useful?

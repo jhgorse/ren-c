@@ -74,7 +74,7 @@ static REB_R Augmenter_Dispatcher(REBFRM *f)
     RELVAL *augmentee = ARR_AT(details, IDX_AUGMENTER_AUGMENTEE);
 
     INIT_F_PHASE(f, VAL_ACTION(augmentee));
-    F_BINDING(f) = VAL_BINDING(augmentee);
+    f_binding = VAL_BINDING(augmentee);
 
     return R_REDO_UNCHECKED;  // signatures should match
 }

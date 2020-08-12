@@ -1531,7 +1531,7 @@ REB_R Action_Executor(REBFRM *f)
             }
 
             INIT_F_PHASE(f, VAL_PHASE(f->out));
-            F_BINDING(f) = VAL_BINDING(f->out);
+            f_binding = VAL_BINDING(f->out);
 
             STATE_BYTE(f) = ST_ACTION_INITIAL_ENTRY;  // reset
             goto redo_checked;

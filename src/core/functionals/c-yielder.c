@@ -381,11 +381,11 @@ REBNATIVE(yield)
     assert(F_PHASE(frame_) == NATIVE_ACT(yield));
     REBFRM * const yield_frame = frame_;  // ...make synonyms more obvious
 
-    REBNOD *f_binding = F_BINDING(yield_frame);
-    if (not f_binding)
+    REBNOD *yield_binding = F_BINDING(yield_frame);
+    if (not yield_binding)
         fail (Error_Yield_Archetype_Raw());  // must have yielder to jump to
 
-    REBCTX *yielder_context = CTX(f_binding);
+    REBCTX *yielder_context = CTX(yield_binding);
     REBFRM *yielder_frame = CTX_FRAME_MAY_FAIL(yielder_context);
     if (not yielder_frame)
         fail ("Cannot yield to generator that has completed");

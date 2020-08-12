@@ -941,7 +941,7 @@ REBNATIVE(applique)
     // f_param assigned above
     f_special = f_arg; // signal only type-check the existing data
     INIT_F_PHASE(f, VAL_ACTION(applicand));
-    F_BINDING(f) = VAL_BINDING(applicand);
+    f_binding = VAL_BINDING(applicand);
 
     Begin_Prefix_Action(f, opt_label);
 

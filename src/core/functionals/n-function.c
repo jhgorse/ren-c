@@ -571,18 +571,18 @@ REBNATIVE(return)
 {
     INCLUDE_PARAMS_OF_RETURN;
 
-    REBFRM *f = frame_; // implicit parameter to REBNATIVE()
+    REBFRM *return_frame = frame_;  // implicit parameter to REBNATIVE()
 
     // Each ACTION! cell for RETURN has a piece of information in it that can
     // can be unique (the binding).  When invoked, that binding is held in the
     // REBFRM*.  This generic RETURN dispatcher interprets that binding as the
     // FRAME! which this instance is specifically intended to return from.
     //
-    REBNOD *f_binding = F_BINDING(f);
-    if (not f_binding)
+    REBNOD *return_binding = F_BINDING(return_frame);
+    if (not return_binding)
         fail (Error_Return_Archetype_Raw());  // must have binding to jump to
 
-    REBFRM *target_frame = CTX_FRAME_MAY_FAIL(CTX(f_binding));
+    REBFRM *target_frame = CTX_FRAME_MAY_FAIL(CTX(return_binding));
 
     // !!! We only have a REBFRM via the binding.  We don't have distinct
     // knowledge about exactly which "phase" the original RETURN was
@@ -634,10 +634,10 @@ REBNATIVE(return)
             fail (Error_Bad_Return_Type(target_frame, VAL_TYPE(v)));
     }
 
-    assert(f_binding->header.bits & ARRAY_FLAG_IS_VARLIST);
+    assert(return_binding->header.bits & ARRAY_FLAG_IS_VARLIST);
 
     Move_Value(D_OUT, NATIVE_VAL(unwind)); // see also Make_Thrown_Unwind_Value
-    INIT_BINDING_MAY_MANAGE(D_OUT, f_binding);
+    INIT_BINDING_MAY_MANAGE(D_OUT, return_binding);
 
     return Init_Thrown_With_Label(D_OUT, v, D_OUT);
 }
