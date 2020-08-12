@@ -320,11 +320,11 @@
 // !!! An experimental concept in the stackless build is to pursue a model of
 // deep coroutines that aligns somewhat with Go.  This involves blocking on
 // channels that act as signals.  As a primitive prototype, when a function
-// returns R_BLOCKING then it yields to the other coroutines that are in
+// returns R_WAITING then it yields to the other coroutines that are in
 // flight to allow them to unblock and potentially come alive.
 //
-#define R_BLOCKING \
-    cast(REBVAL*, &PG_R_Blocking)
+#define R_WAITING \
+    cast(REBVAL*, &PG_R_Waiting)
 
 
 #define R_UNHANDLED \

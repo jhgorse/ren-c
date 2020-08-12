@@ -102,7 +102,7 @@ PVAR REBVAL PG_R_Reference;  // "pseudotype" REB_R_REFERENCE
 PVAR REBVAL PG_R_Thrown;  // has "pseudotype" REB_R_THROWN
 PVAR REBVAL PG_R_Continuation;  // has "pseudotype" REB_R_CONTINUATION
 PVAR REBVAL PG_R_Dewind;  // has "pseudotype" REB_R_DEWIND
-PVAR REBVAL PG_R_Blocking;  // has "pseudotype" REB_R_BLOCKING
+PVAR REBVAL PG_R_Waiting;  // has "pseudotype" REB_R_WAITING
 
 // These are root variables which used to be described in %root.r and kept
 // alive by keeping that array alive.  Now they are API handles, kept alive

@@ -214,7 +214,7 @@ bool Trampoline_Throws(REBFRM *f)
     //
     f = FS_TOP;
 
-  loop:
+  bounce:  // ...on the trampoline.  :-)
 
     REB_R r;
 
@@ -280,83 +280,17 @@ bool Trampoline_Throws(REBFRM *f)
             or STATE_BYTE(f) != 0
             or (Is_Action_Frame(f) and F_PHASE(f) == NATIVE_ACT(yield))
         );
+
+        f = FS_TOP;
+        goto bounce;
     }
 
-    if (r == R_BLOCKING) {
-        assert(f == FS_TOP);
-
-        if (not PG_Tasks)
-            fail ("Deadlock reached (main thread blocking with no tasks)");
-
-        if (not PG_Tasks->plug_frame) {  // it's plugged in, so plug is null
-            //
-            // A task is running and it blocked.  Unplug it, move it to the
-            // back of the line, and give the main thread a chance.
-            //
-            assert(GET_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME));
-            CLEAR_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME);  // for unplug
-            assert(not PG_Tasks->plug_frame);
-            PG_Tasks->plug_frame = f;
-            Unplug_Stack(
-                &PG_Tasks->plug,
-                f,
-                PG_Tasks->go_frame->prior
-            );
-            PG_Tasks = PG_Tasks->next;  // circularly linked
-        }
-        else {
-            Init_Void(f->out);  // R_BLOCKING was returned, f->out unknown
-
-            // Main is running and there are tasks.  Go ahead and start up
-            // the first one available (last one to execute).
-            //
-            Replug_Stack(PG_Tasks->plug_frame, f, SPECIFIC(&PG_Tasks->plug));
-            assert(IS_TRASH_DEBUG(&PG_Tasks->plug));
-            PG_Tasks->plug_frame = nullptr;
-
-            // The scheduler tests when root frames are reached if that root
-            // frame is the function frame of the GO action of the currently
-            // running task (PG_Task).  If so, that task is disposed of.
-            //
-            assert(NOT_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME));
-            SET_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME);  // uncrossable
-        }
-
-        r = R_CONTINUATION;
-    }
-
-    f = FS_TOP;  // refresh to whatever topmost frame is after call
-
-    if (r == R_THROWN) {
-        //
-        // When an executor does `return R_THROWN;` cooperatively, it is
-        // expected that it has balanced all of its API handles and memory
-        // allocations.  The executor is changed to a "trash" pointer to
-        // indicate it did not end normally and should not be called again
-        // (distinct from the 'nullptr' which signals normal execution done).
-        // This is because the trashing is not necessary in release builds
-        //
-        assert(not IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
-
-        if (f->executor != &Cleaner_Executor) {
-            Move_Value(DS_PUSH(), VAL_THROWN_LABEL(f->out));
-            CATCH_THROWN(f->out, f->out);
-            STATE_BYTE(f) = 0;
-            TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
-            INIT_F_EXECUTOR(f, &Cleaner_Executor);
-            STATE_BYTE(f) = ST_CLEANER_RUNNING_THROWN;
-            goto loop;
-        }
-
-        TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // cleaner finished
-    }
-
-    if (r == R_CONTINUATION) {
-        assert(f->executor != nullptr);  // *topmost* frame needs callback
-        goto loop;  // keep going
-    }
+    f = FS_TOP;  // A return of "f->out" is in terms of the topmost frame
 
     if (r == f->out) {  // no further execution for frame, drop it
+      #if !defined(NDEBUG)
+        Eval_Core_Exit_Checks_Debug(f);   // called unless a fail() longjmps
+      #endif
 
         // !!! This is going to be the right place to handle other variants of
         // return values consistently, e.g. API handles.  The return results
@@ -369,7 +303,7 @@ bool Trampoline_Throws(REBFRM *f)
         //);  // changes should be restored, va_list reification may take hold
         #endif
 
-        TRASH_POINTER_IF_DEBUG(f->executor);
+        TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
 
         assert(IS_SPECIFIC(cast(RELVAL*, f->out)));
 
@@ -436,76 +370,142 @@ bool Trampoline_Throws(REBFRM *f)
             f = prior;
             assert(f == FS_TOP);  // sanity check (is the top of the stack)
         }
-        goto loop;
+        goto bounce;
     }
 
-  #if !defined(NDEBUG)
-    if (not f_original)
-        Eval_Core_Exit_Checks_Debug(f);   // called unless a fail() longjmps
-  #endif
+    if (r == R_WAITING) {
+        if (not PG_Tasks)
+            fail ("Deadlock reached (main thread blocking with no tasks)");
 
-    assert(r == R_THROWN);
-
-  thrown:
-    if (GET_EVAL_FLAG(f, ROOT_FRAME)) {
-        if (PG_Tasks and f == PG_Tasks->go_frame) {
+        if (not PG_Tasks->plug_frame) {  // it's plugged in, so plug is null
             //
-            // !!! When you get an uncaught throw or failure and it is in
-            // a goroutine, that goroutine has to stop and signal its
-            // error somehow.
+            // A task is running and it blocked.  Unplug it, move it to the
+            // back of the line, and give the main thread a chance.
             //
-            // In terms of raising errors on the main thread, it's kind of
-            // like a Ctrl-C fabricating an error on any innocuous
-            // statement you might have--if the scheduler were allowed to
-            // run at any minute.  But right now, the only time it will
-            // happen is when the main thread is in a block on a SEND-CHAN
-            // or RECEIVE-CHAN.  Rethink.
+            assert(GET_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME));
+            CLEAR_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME);  // for unplug
+            assert(not PG_Tasks->plug_frame);
+            PG_Tasks->plug_frame = f;
+            Unplug_Stack(
+                &PG_Tasks->plug,
+                f,
+                PG_Tasks->go_frame->prior
+            );
+            PG_Tasks = PG_Tasks->next;  // circularly linked
+        }
+        else {
+            Init_Void(f->out);  // R_BLOCKING was returned, f->out unknown
+
+            // Main is running and there are tasks.  Go ahead and start up
+            // the first one available (last one to execute).
             //
-            REBCTX *error = Error_No_Catch_For_Throw(f->out);
-            Abort_Frame(f);
+            Replug_Stack(PG_Tasks->plug_frame, f, SPECIFIC(&PG_Tasks->plug));
+            assert(IS_TRASH_DEBUG(&PG_Tasks->plug));
+            PG_Tasks->plug_frame = nullptr;
 
-            REBTSK *failed_task = PG_Tasks;
-            Circularly_Unlink_Task(failed_task);
-
-            if (NOT_END(&failed_task->channel)) {
-                //
-                // !!! We have to be careful here, because we're in the
-                // trampoline...so we can't call SEND-CHAN.
-                //
-                REBCTX *ctx = VAL_CONTEXT(&failed_task->channel);
-                REBLEN n = Find_Canon_In_Context(
-                    ctx,
-                    Canon(SYM_BUFFER),
-                    true   // !!! "always"?
-                );
-                REBVAL *buffer = CTX_VAR(ctx, n);
-                Append_Value(VAL_ARRAY(buffer), CTX_ARCHETYPE(error));
-                error = nullptr;
-            }
-
-            FREE(REBTSK, failed_task);
-
-            if (error)
-                fail (error);
-
-            f = FS_TOP;
-            goto loop;
+            // The scheduler tests when root frames are reached if that root
+            // frame is the function frame of the GO action of the currently
+            // running task (PG_Task).  If so, that task is disposed of.
+            //
+            assert(NOT_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME));
+            SET_EVAL_FLAG(PG_Tasks->go_frame, ROOT_FRAME);  // uncrossable
         }
 
-        assert(NOT_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // always kept
-        DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
-        return true;
+        f = FS_TOP;  // Refresh after plug or unplug
+
+        goto bounce;
     }
 
-    if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE))
-        f = f->prior;
-    else {
-        Abort_Frame(f);
-        f = FS_TOP;  // refresh
+    if (r == R_THROWN) {
+      thrown:
 
+      #if !defined(NDEBUG)
+        Eval_Core_Exit_Checks_Debug(f);   // called unless a fail() longjmps
+      #endif
+
+        // When an executor does `return R_THROWN;` cooperatively, it is
+        // expected that it has balanced all of its API handles and memory
+        // allocations.  The executor is changed to a "trash" pointer to
+        // indicate it did not end normally and should not be called again
+        // (distinct from the 'nullptr' which signals normal execution done).
+        // This is because the trashing is not necessary in release builds
+        //
+        assert(not IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
+
+        if (f->executor != &Cleaner_Executor) {
+            Move_Value(DS_PUSH(), VAL_THROWN_LABEL(f->out));
+            CATCH_THROWN(f->out, f->out);
+            STATE_BYTE(f) = 0;
+            TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
+            INIT_F_EXECUTOR(f, &Cleaner_Executor);
+            STATE_BYTE(f) = ST_CLEANER_RUNNING_THROWN;
+            goto bounce;
+        }
+
+        TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);  // cleaner finished
+
+        if (GET_EVAL_FLAG(f, ROOT_FRAME)) {
+            if (PG_Tasks and f == PG_Tasks->go_frame) {
+                //
+                // !!! When you get an uncaught throw or failure and it is in
+                // a goroutine, that goroutine has to stop and signal its
+                // error somehow.
+                //
+                // In terms of raising errors on the main thread, it's kind of
+                // like a Ctrl-C fabricating an error on any innocuous
+                // statement you might have--if the scheduler were allowed to
+                // run at any minute.  But right now, the only time it will
+                // happen is when the main thread is in a block on a SEND-CHAN
+                // or RECEIVE-CHAN.  Rethink.
+                //
+                REBCTX *error = Error_No_Catch_For_Throw(f->out);
+                Abort_Frame(f);
+
+                REBTSK *failed_task = PG_Tasks;
+                Circularly_Unlink_Task(failed_task);
+
+                if (NOT_END(&failed_task->channel)) {
+                    //
+                    // !!! We have to be careful here, because we're in the
+                    // trampoline...so we can't call SEND-CHAN.
+                    //
+                    REBCTX *ctx = VAL_CONTEXT(&failed_task->channel);
+                    REBLEN n = Find_Canon_In_Context(
+                        ctx,
+                        Canon(SYM_BUFFER),
+                        true   // !!! "always"?
+                    );
+                    REBVAL *buffer = CTX_VAR(ctx, n);
+                    Append_Value(VAL_ARRAY(buffer), CTX_ARCHETYPE(error));
+                    error = nullptr;
+                }
+
+                FREE(REBTSK, failed_task);
+
+                if (error)
+                    fail (error);
+
+                f = FS_TOP;
+                goto bounce;
+            }
+
+            assert(NOT_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // always kept
+            DROP_TRAP_SAME_STACKLEVEL_AS_PUSH(&jump);
+            return true;
+        }
+
+        if (GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE))
+            f = f->prior;
+        else {
+            Abort_Frame(f);
+            f = FS_TOP;  // refresh
+        }
+
+        goto bounce;
     }
 
-    goto loop;
+    assert(!"executor(f) not f->out, R_CONTINUATION, R_WAITING, R_THROWN");
+    panic (r);
 }
 
 
@@ -628,18 +628,18 @@ REBNATIVE(wait2)
 
     enum {
         ST_WAIT2_INITIAL_ENTRY = 0,
-        ST_WAIT2_SIMULATING_BLOCKING
+        ST_WAIT2_SIMULATING_WAITING
     };
 
     switch (D_STATE_BYTE) {
       case ST_WAIT2_INITIAL_ENTRY: goto initial_entry;
-      case ST_WAIT2_SIMULATING_BLOCKING: goto return_void;
+      case ST_WAIT2_SIMULATING_WAITING: goto return_void;
       default: assert(false);
     }
 
   initial_entry: {
-    D_STATE_BYTE = ST_WAIT2_SIMULATING_BLOCKING;
-    return R_BLOCKING;
+    D_STATE_BYTE = ST_WAIT2_SIMULATING_WAITING;
+    return R_WAITING;
   }
 
   return_void: {

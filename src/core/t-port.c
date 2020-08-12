@@ -281,7 +281,7 @@ REBNATIVE(receive_chan)
     // then go try someone else.
     //
     D_STATE_BYTE = ST_RECEIVE_CHAN_BLOCKING;
-    return R_BLOCKING;
+    return R_WAITING;
   }
 }
 
@@ -352,7 +352,7 @@ REBNATIVE(send_chan)
     }
 
     D_STATE_BYTE = ST_SEND_CHAN_BLOCKING;
-    return R_BLOCKING;
+    return R_WAITING;
   }
 }
 
