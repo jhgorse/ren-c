@@ -68,7 +68,7 @@ REBNATIVE(reeval)
     DECLARE_FRAME (subframe, frame_->feed, flags);
     Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
-    subframe->u.reval.value = ARG(value);  // !!! Push frame corrupts u ATM
+    subframe->u.eval.current = ARG(value);
 
     SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
     STATE_BYTE(frame_) = 1;  // STATE_BYTE() == 0 reserved for initial entry
@@ -299,12 +299,10 @@ REBNATIVE(shove)
 
         // Nuance here is needed for `x: me + 10` vs. `x: my add 10`.  Review.
         //
-        // !!! Note: Push_Frame corrupts u ATM
-        //
         if (REF(enfix))
-            subframe->u.reval.value = Lookback_While_Fetching_Next(f);
+            subframe->u.eval.current = Lookback_While_Fetching_Next(f);
         else
-            subframe->u.reval.value = shovee;
+            subframe->u.eval.current = shovee;
     }
     else {
         // This case is here for:

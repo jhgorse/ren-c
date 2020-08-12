@@ -69,7 +69,7 @@ REBNATIVE(reduce)
         );
         Push_Frame(D_OUT, subframe, &Evaluator_Executor);
 
-        subframe->u.reval.value = v;  // !!! Push_Frame corrupts u ATM
+        subframe->u.eval.current = v;
 
         SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
         D_STATE_BYTE = 1;  // D_STATE_BYTE == 0 reserved for initial entry

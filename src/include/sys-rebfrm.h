@@ -774,8 +774,9 @@ struct Reb_Frame {
     // Used to slip cell to re-evaluate into Eval_Core()
     //
     struct {
-        const RELVAL *value;
-    } reval;
+        const RELVAL *current;
+        const REBVAL *current_gotten;
+    } eval;
 
     struct {
         // Used to hold on to the PARSE rule, which may point into the actual

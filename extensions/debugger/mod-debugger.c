@@ -236,7 +236,7 @@ static bool Reevaluate_In_Subframe_Maybe_Stale_Throws(
     );
     Push_Frame(out, subframe, &Evaluator_Executor);
 
-    subframe->u.reval.value = reval;
+    subframe->u.eval.current = reval;
 
     bool threw = (*PG_Trampoline_Throws)(subframe);
     Drop_Frame(subframe);
