@@ -827,13 +827,13 @@ REBVAL *First_Unspecialized_Arg(REBVAL **opt_param_out, REBFRM *f)
 //
 bool Make_Invocation_Frame_Throws(
     REBFRM *f,
-    const REBVAL *action,
+    REBACT *act,
+    REBSPC *binding,
     REBSTR *opt_label
 ){
-    assert(IS_ACTION(action));
     assert(f == FS_TOP);
 
-    Push_Action(f, VAL_ACTION(action), VAL_BINDING(action));
+    Push_Action(f, act, binding);
     Begin_Prefix_Action(f, opt_label);
 
     // Use this special mode where we ask the dispatcher not to run, just to
@@ -850,8 +850,6 @@ bool Make_Invocation_Frame_Throws(
     SET_EVAL_FLAG(f, FULFILL_ONLY);
     SET_EVAL_FLAG(f, ERROR_ON_DEFERRED_ENFIX);  // can't allow ELSE/THEN/etc.
 
-    assert(F_BINDING(f) == VAL_BINDING(action));  // no invoke to change it
-
     bool threw = Trampoline_Throws(f);
 
     CLEAR_EVAL_FLAG(f, FULFILL_ONLY);  // cleared by the evaluator
@@ -862,8 +860,8 @@ bool Make_Invocation_Frame_Throws(
     // Drop_Action() clears out the phase and binding.  Put them back.
     // !!! Should it check EVAL_FLAG_FULFILL_ONLY?
 
-    INIT_F_PHASE(f, VAL_ACTION(action));
-    F_BINDING(f) = VAL_BINDING(action);
+    INIT_F_PHASE(f, act);
+    f_binding = binding;
 
     // The function did not actually execute, so no SPC(f) was never handed
     // out...the varlist should never have gotten managed.  So this context
@@ -912,10 +910,7 @@ bool Make_Frame_From_Varargs_Throws(
 
     assert(Is_Action_Frame(parent));
 
-    // REBFRM whose built FRAME! context we will steal
-
-    DECLARE_FRAME (f, parent->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
-    Push_Frame(out, f, &Action_Executor);
+    REBDSP dsp_orig = DSP;
 
     REBSTR *opt_label;
     if (Get_If_Word_Or_Path_Throws(
@@ -923,18 +918,16 @@ bool Make_Frame_From_Varargs_Throws(
         &opt_label,
         specializee,
         SPECIFIED,
-        true  // push_refinements = true (DECLARE_FRAME captured original DSP)
+        true  // push_refinements = true (we captured `dsp_orig`)
     )){
-        Drop_Frame(f);
         return true;
     }
 
     if (not IS_ACTION(out))
         fail (specializee);
 
-    DECLARE_LOCAL (action);
-    Move_Value(action, out);
-    PUSH_GC_GUARD(action);
+    REBACT *act = VAL_ACTION(out);
+    REBSPC *binding = VAL_BINDING(out);
 
     // We interpret phrasings like `x: does all [...]` to mean something
     // like `x: specialize 'all [block: [...]]`.  While this originated
@@ -943,15 +936,17 @@ bool Make_Frame_From_Varargs_Throws(
     // semantics...which can be useful in their own right, plus the
     // resulting function will run faster.
 
-    if (Make_Invocation_Frame_Throws(f, action, opt_label)) {
-        DROP_GC_GUARD(action);
+    DECLARE_FRAME (f, parent->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME);
+    Push_Frame(out, f, &Action_Executor);
+    f->baseline.dsp = dsp_orig;  // so Action_Executor() sees pushed refines
+
+    if (Make_Invocation_Frame_Throws(f, act, binding, opt_label)) {
+        Drop_Frame(f);
         return true;
     }
 
-    REBACT *act = VAL_ACTION(action);
-
     assert(NOT_SERIES_FLAG(f->varlist, MANAGED)); // not invoked yet
-    assert(F_BINDING(f) == VAL_BINDING(action));
+    assert(f_binding == binding);
 
     REBCTX *exemplar = Steal_Context_Vars(CTX(f->varlist), NOD(act));
     assert(ACT_NUM_PARAMS(act) == CTX_LEN(exemplar));
@@ -963,7 +958,6 @@ bool Make_Frame_From_Varargs_Throws(
 
     // May not be at end or thrown, e.g. (x: does lit y x = 'y)
     //
-    DROP_GC_GUARD(action);  // before drop to balance at right time
     TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
     Drop_Frame(f);
 

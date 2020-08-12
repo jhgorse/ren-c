@@ -663,12 +663,7 @@ REBNATIVE(match)
         if (NOT_CELL_FLAG(test, UNEVALUATED)) // soft quote eval'd
             goto either_match; // allow `MATCH ('NULL?) ...`
 
-        // REBFRM whose built FRAME! context we will steal (capture DSP now)
-        //
-        DECLARE_FRAME (
-            f, parent->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME
-        );
-        Push_Frame(D_OUT, f, &Action_Executor);
+        REBDSP dsp_orig = DSP;
 
         REBSTR *opt_label;
         if (Get_If_Word_Or_Path_Throws(
@@ -678,15 +673,12 @@ REBNATIVE(match)
             SPECIFIED,
             true  // push_refinements, DECLARE_FRAME() captured original DSP
         )){
-            Drop_Frame(f);
             return R_THROWN;
         }
 
         Move_Value(test, D_OUT);
 
         if (not IS_ACTION(test)) {
-            TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
-            Drop_Frame(f);
             if (
                 IS_WORD(test) or IS_GET_WORD(test) or IS_SET_WORD(test)
                 or ANY_PATH(test)  // ^-- we allow ISSUE!
@@ -703,7 +695,20 @@ REBNATIVE(match)
         // but actually captures its first argument.  That will be MATCH's
         // return value if the filter function returns a truthy result.
 
-        if (Make_Invocation_Frame_Throws(f, test, opt_label)) {
+        // REBFRM whose built FRAME! context we will steal (capture DSP now)
+        //
+        DECLARE_FRAME (
+            f, parent->feed, EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME
+        );
+        Push_Frame(D_OUT, f, &Action_Executor);
+        f->baseline.dsp = dsp_orig;  // include the pushed refinements
+
+        if (Make_Invocation_Frame_Throws(
+            f,
+            VAL_ACTION(test),
+            VAL_BINDING(test),
+            opt_label
+        )){
             Drop_Frame(f);
             return R_THROWN;
         }
