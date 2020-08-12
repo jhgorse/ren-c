@@ -61,6 +61,9 @@
 #define f_next F_VALUE(f)
 #define f_next_gotten F_GOTTEN(f)
 
+#define kind_current KIND_BYTE(v)
+
+
 // In the early development of FRAME!, the REBFRM* for evaluating across a
 // block was reused for each ACTION! call.  Since no more than one action was
 // running at a time, this seemed to work.  However, that didn't allow for
@@ -176,18 +179,6 @@ REB_R Evaluator_Executor(REBFRM *f)
     if (GET_EVAL_FLAG(f, ABRUPT_FAILURE))  // fail() from this executor
         return R_THROWN;
 
-    // Caching KIND_BYTE(*at) in a local can make a slight performance
-    // difference, though how much depends on what the optimizer figures out.
-    // Either way, it's useful to have handy in the debugger.
-    //
-    // Note: int8_fast_t picks `char` on MSVC, shouldn't `int` be faster?
-    // https://stackoverflow.com/a/5069643/
-    //
-    union {
-        int byte;  // values bigger than REB_64 are used for in-situ literals
-        enum Reb_Kind pun;  // for debug viewing *if* byte < REB_MAX_PLUS_MAX
-    } kind;
-
     // `v` is the shorthand for the value we are switching on
     //
     const RELVAL *v;
@@ -196,7 +187,6 @@ REB_R Evaluator_Executor(REBFRM *f)
   #if !defined(NDEBUG)
     TRASH_POINTER_IF_DEBUG(v);
     TRASH_POINTER_IF_DEBUG(gotten);
-    kind.byte = REB_T_TRASH;
   #endif
 
     switch (STATE_BYTE(f)) {
@@ -227,7 +217,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         if (NOT_END(f_next) and GET_CELL_FLAG(f->out, OUT_MARKED_STALE)) {
             gotten = f_next_gotten;
             v = Lookback_While_Fetching_Next(f);
-            kind.byte = KIND_BYTE(v);
             STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
             goto evaluate;
         }
@@ -248,7 +237,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         if (Is_Throwing(f))
             return R_THROWN;
         v = ensure(SET_WORD, f_spare);
-        kind.byte = REB_SET_WORD;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_word_with_out;
 
@@ -256,7 +244,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         if (Is_Throwing(f))
             return R_THROWN;
         v = ensure(SET_PATH, f_spare);
-        kind.byte = REB_SET_PATH;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_path_with_out;
 
@@ -264,7 +251,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         if (Is_Throwing(f))
             return R_THROWN;
         v = ensure(SET_GROUP, f_spare);
-        kind.byte = REB_SET_GROUP;
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto set_group_with_out;
 
@@ -277,7 +263,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         assert(not Is_Throwing(f));
         v = f->u.reval.value;
         gotten = nullptr;
-        kind.byte = KIND_BYTE(v);
         STATE_BYTE(f) = ST_EVALUATOR_EVALUATING;
         goto evaluate;
 
@@ -307,8 +292,7 @@ REB_R Evaluator_Executor(REBFRM *f)
 
     UPDATE_EXPRESSION_START(f);  // !!! See F_INDEX() for caveats
 
-    kind.byte = KIND_BYTE(f_next);
-    if (kind.byte == REB_0_END)
+    if (KIND_BYTE(f_next) == REB_0_END)
         goto finished;
 
     v = Lookback_While_Fetching_Next(f);
@@ -322,8 +306,6 @@ REB_R Evaluator_Executor(REBFRM *f)
   evaluate: ;  // meaningful semicolon--subsequent macro may declare things
 
     // ^-- doesn't advance expression index: `reeval x` starts with `reeval`
-
-    assert(kind.byte == KIND_BYTE_UNCHECKED(v));
 
 //=//// LOOKAHEAD FOR ENFIXED FUNCTIONS THAT QUOTE THEIR LEFT ARG /////////=//
 
@@ -356,7 +338,7 @@ REB_R Evaluator_Executor(REBFRM *f)
         GET_ACTION_FLAG(VAL_ACTION(f_next_gotten), POSTPONES_ENTIRELY)
         or (
             GET_FEED_FLAG(f->feed, NO_LOOKAHEAD)
-            and not ANY_SET_KIND(kind.byte)  // not SET-WORD!, SET-PATH!, etc.
+            and not ANY_SET_KIND(kind_current)  // not SET-WORD!, SET-PATH!..
         )
     ){
         // !!! cache this test?
@@ -377,7 +359,7 @@ REB_R Evaluator_Executor(REBFRM *f)
     //
     if (GET_ACTION_FLAG(VAL_ACTION(f_next_gotten), SKIPPABLE_FIRST)) {
         REBVAL *first = First_Unspecialized_Param(VAL_ACTION(f_next_gotten));
-        if (not TYPE_CHECK(first, kind.byte))  // left's kind
+        if (not TYPE_CHECK(first, kind_current))  // left's kind
             goto give_up_backward_quote_priority;
     }
 
@@ -395,8 +377,8 @@ REB_R Evaluator_Executor(REBFRM *f)
     v = Lookback_While_Fetching_Next(f);
 
     if (
-        IS_END(f_next)
-        and (kind.byte == REB_WORD or kind.byte == REB_PATH)  // left kind
+        IS_END(f_next) and  // v-- out is what used to be on the left
+        (KIND_BYTE(f->out) == REB_WORD or KIND_BYTE(f->out) == REB_PATH)
     ){
         // We make a special exemption for left-stealing arguments, when
         // they have nothing to their right.  They lose their priority
@@ -429,7 +411,6 @@ REB_R Evaluator_Executor(REBFRM *f)
     Push_Action(subframe, VAL_ACTION(gotten), VAL_BINDING(gotten));
     Begin_Enfix_Action(subframe, VAL_WORD_SPELLING(v));
 
-    kind.byte = REB_ACTION;  // for consistency in the UNEVALUATED check
     goto process_action;
   }
 
@@ -446,9 +427,7 @@ REB_R Evaluator_Executor(REBFRM *f)
     // fast tests like ANY_INERT() and IS_NULLED_OR_VOID_OR_END() has shown
     // to reduce performance in practice.  The compiler does the right thing.
 
-    assert(kind.byte == KIND_BYTE_UNCHECKED(v));
-
-    switch (kind.byte) {
+    switch (kind_current) {
 
       case REB_0_END:
         goto finished;
@@ -712,7 +691,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         assert(f_next_gotten == nullptr);  // just ran arbitrary code...
         gotten = nullptr;  // ...so no need to say `gotten = f_next_gotten;`
         v = Lookback_While_Fetching_Next(f);
-        kind.byte = KIND_BYTE(v);
         goto evaluate;
       }
 
@@ -771,7 +749,7 @@ REB_R Evaluator_Executor(REBFRM *f)
                 | EVAL_FLAG_ALLOCATED_FEED
                 | EVAL_FLAG_TRAMPOLINE_KEEPALIVE;
 
-        if (kind.byte == REB_PATH)
+        if (kind_current == REB_PATH)
             flags |= EVAL_FLAG_PUSH_PATH_REFINES;  // how we tell which it was
 
         DECLARE_FRAME (path_frame, path_feed, flags);
@@ -946,18 +924,15 @@ REB_R Evaluator_Executor(REBFRM *f)
         }
 
         if (ANY_WORD(f_spare))
-            kind.byte
-                = mutable_KIND_BYTE(f_spare)
+            mutable_KIND_BYTE(f_spare)
                 = mutable_MIRROR_BYTE(f_spare)
                 = REB_GET_WORD;
         else if (ANY_PATH(f_spare))
-            kind.byte
-                = mutable_KIND_BYTE(f_spare)
+            mutable_KIND_BYTE(f_spare)
                 = mutable_MIRROR_BYTE(f_spare)
                 = REB_GET_PATH;
         else if (ANY_BLOCK(f_spare))
-            kind.byte
-                = mutable_KIND_BYTE(f_spare)
+            mutable_KIND_BYTE(f_spare)
                 = mutable_MIRROR_BYTE(f_spare)
                 = REB_GET_BLOCK;
         else if (IS_ACTION(f_spare)) {
@@ -1023,7 +998,6 @@ REB_R Evaluator_Executor(REBFRM *f)
             Push_Action(subframe, VAL_ACTION(f_spare), VAL_BINDING(f_spare));
             Begin_Prefix_Action(subframe, nullptr);  // no label
 
-            kind.byte = REB_ACTION;
             assert(NOT_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT));
             SET_FEED_FLAG(f->feed, NEXT_ARG_FROM_OUT);
 
@@ -1033,22 +1007,19 @@ REB_R Evaluator_Executor(REBFRM *f)
         v = f_spare;
 
         if (ANY_WORD(f_spare)) {
-            kind.byte
-                = mutable_KIND_BYTE(f_spare)
+            mutable_KIND_BYTE(f_spare)
                 = mutable_MIRROR_BYTE(f_spare)
                 = REB_SET_WORD;
             goto set_word_with_out;
         }
         else if (ANY_PATH(f_spare)) {
-            kind.byte
-                = mutable_KIND_BYTE(f_spare)
+            mutable_KIND_BYTE(f_spare)
                 = mutable_MIRROR_BYTE(f_spare)
                 = REB_SET_PATH;
             goto set_path_with_out;
         }
         else if (ANY_BLOCK(f_spare)) {
-            kind.byte
-                = mutable_KIND_BYTE(f_spare)
+            mutable_KIND_BYTE(f_spare)
                 = mutable_MIRROR_BYTE(f_spare)
                 = REB_SET_BLOCK;
 
@@ -1226,7 +1197,6 @@ REB_R Evaluator_Executor(REBFRM *f)
         //
         gotten = f_spare;
         v = f_spare;
-        kind.byte = KIND_BYTE(v);
 
         goto evaluate; }
 
@@ -1411,14 +1381,12 @@ REB_R Evaluator_Executor(REBFRM *f)
     // enfix.  If it's necessary to dispatch an enfix function via path, then
     // a word is used to do it, like `->` in `x: -> lib/method [...] [...]`.
 
-    kind.byte = KIND_BYTE(f_next);
-
-    if (kind.byte == REB_0_END) {
+    switch (KIND_BYTE(f_next)) {
+      case REB_0_END:
         CLEAR_FEED_FLAG(f->feed, NO_LOOKAHEAD);
         goto finished;  // hitting end is common, avoid do_next's switch()
-    }
 
-    if (kind.byte == REB_PATH) {
+      case REB_PATH:
         if (
             GET_FEED_FLAG(f->feed, NO_LOOKAHEAD)
             or MIRROR_BYTE(f_next) != REB_WORD
@@ -1434,8 +1402,12 @@ REB_R Evaluator_Executor(REBFRM *f)
         // as PATH!, but CELL_KIND() will interpret the cell bits as a word.
         //
         assert(VAL_WORD_SYM(VAL_UNESCAPED(f_next)) == SYM__SLASH_1_);
-    }
-    else if (kind.byte != REB_WORD) {
+        break;
+
+      case REB_WORD:
+        break;
+
+      default:
         CLEAR_FEED_FLAG(f->feed, NO_LOOKAHEAD);
         goto finished;
     }
