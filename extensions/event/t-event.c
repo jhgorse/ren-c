@@ -55,11 +55,10 @@ REBINT Cmp_Event(const REBCEL *t1, const REBCEL *t2)
 //
 //  CT_Event: C
 //
-REBINT CT_Event(const REBCEL *a, const REBCEL *b, REBINT mode)
+REBINT CT_Event(const REBCEL *a, const REBCEL *b, bool strict)
 {
-    REBINT diff = Cmp_Event(a, b);
-    if (mode >=0) return diff == 0;
-    return -1;
+    UNUSED(strict);
+    return Cmp_Event(a, b);
 }
 
 

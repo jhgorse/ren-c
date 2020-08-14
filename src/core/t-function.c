@@ -46,11 +46,14 @@ static bool Same_Action(const REBCEL *a, const REBCEL *b)
 //
 //  CT_Action: C
 //
-REBINT CT_Action(const REBCEL *a, const REBCEL *b, REBINT mode)
+REBINT CT_Action(const REBCEL *a, const REBCEL *b, bool strict)
 {
-    if (mode >= 0)
-        return Same_Action(a, b) ? 1 : 0;
-    return -1;
+    UNUSED(strict);  // no lax form of comparison
+
+    if (Same_Action(a, b))
+        return 0;
+    assert(VAL_ACTION(a) != VAL_ACTION(b));
+    return a > b ? 1 : -1;  // !!! Review arbitrary ordering
 }
 
 

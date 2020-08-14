@@ -216,12 +216,18 @@ void MF_Time(REB_MOLD *mo, const REBCEL *v, bool form)
 //
 //  CT_Time: C
 //
-REBINT CT_Time(const REBCEL *a, const REBCEL *b, REBINT mode)
+REBINT CT_Time(const REBCEL *v1, const REBCEL *v2, bool strict)
 {
-    REBINT num = Cmp_Time(a, b);
-    if (mode >= 0)  return (num == 0);
-    if (mode == -1) return (num >= 0);
-    return (num > 0);
+    UNUSED(strict);
+
+    REBI64 t1 = VAL_NANO(v1);
+    REBI64 t2 = VAL_NANO(v2);
+
+    if (t2 == t1)
+        return 0;
+    if (t1 > t2)
+        return 1;
+    return -1;
 }
 
 
@@ -346,24 +352,6 @@ REB_R MAKE_Time(
 REB_R TO_Time(REBVAL *out, enum Reb_Kind kind, const REBVAL *arg)
 {
     return MAKE_Time(out, kind, nullptr, arg);
-}
-
-
-//
-//  Cmp_Time: C
-//
-// Given two TIME!s (or DATE!s with a time componet), compare them.
-//
-REBINT Cmp_Time(const REBCEL *v1, const REBCEL *v2)
-{
-    REBI64 t1 = VAL_NANO(v1);
-    REBI64 t2 = VAL_NANO(v2);
-
-    if (t2 == t1)
-        return 0;
-    if (t1 > t2)
-        return 1;
-    return -1;
 }
 
 

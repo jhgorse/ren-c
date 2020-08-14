@@ -340,10 +340,13 @@ REBNATIVE(unless)
 //
 //  CT_Logic: C
 //
-REBINT CT_Logic(const REBCEL *a, const REBCEL *b, REBINT mode)
+REBINT CT_Logic(const REBCEL *a, const REBCEL *b, bool strict)
 {
-    if (mode >= 0)  return (VAL_LOGIC(a) == VAL_LOGIC(b));
-    return -1;
+    UNUSED(strict);
+
+    if (VAL_LOGIC(a) == VAL_LOGIC(b))
+        return 0;
+    return VAL_LOGIC(a) ? 1 : -1;  // only one is true
 }
 
 

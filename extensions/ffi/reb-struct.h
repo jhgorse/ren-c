@@ -521,7 +521,7 @@ extern void cleanup_ffi_closure(const REBVAL *v);
 
 extern REB_R T_Struct(REBFRM *frame_, const REBVAL *verb);
 extern REB_R PD_Struct(REBPVS *pvs, const REBVAL *picker, const REBVAL *opt_setval);
-extern REBINT CT_Struct(const REBCEL *a, const REBCEL *b, REBINT mode);
+extern REBINT CT_Struct(const REBCEL *a, const REBCEL *b, bool strict);
 extern REB_R MAKE_Struct(REBVAL *out, enum Reb_Kind kind,const REBVAL *opt_parent, const REBVAL *arg);
 extern REB_R TO_Struct(REBVAL *out, enum Reb_Kind kind, const REBVAL *arg);
 extern void MF_Struct(REB_MOLD *mo, const REBCEL *v, bool form);

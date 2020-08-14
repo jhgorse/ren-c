@@ -35,12 +35,10 @@ REBTYP *EG_Library_Type = nullptr;  // (E)xtension (G)lobal LIBRARY! type
 //
 //  CT_Library: C
 //
-REBINT CT_Library(const REBCEL *a, const REBCEL *b, REBINT mode)
+REBINT CT_Library(const REBCEL *a, const REBCEL *b, bool strict)
 {
-    if (mode >= 0) {
-        return VAL_LIBRARY(a) == VAL_LIBRARY(b);
-    }
-    return -1;
+    UNUSED(strict);
+    return VAL_LIBRARY(a) == VAL_LIBRARY(b);
 }
 
 

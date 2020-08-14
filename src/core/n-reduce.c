@@ -171,7 +171,7 @@ bool Match_For_Compose(const RELVAL *group, const REBVAL *label) {
     if (VAL_TYPE(first) != VAL_TYPE(label))
         return false;
 
-    return (CT_String(label, first, 1) > 0);
+    return (CT_String(label, first, 1) == 0);
 }
 
 

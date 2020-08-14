@@ -42,9 +42,9 @@
 // functions specifically take REBCEL, so you can't pass REB_LITERAL to them.
 // The handling for QUOTED! is in the comparison dispatch itself.
 //
-REBINT CT_Quoted(const REBCEL *a, const REBCEL *b, REBINT mode)
+REBINT CT_Quoted(const REBCEL *a, const REBCEL *b, bool strict)
 {
-    UNUSED(a); UNUSED(b); UNUSED(mode);
+    UNUSED(a); UNUSED(b); UNUSED(strict);
     assert(!"CT_Quoted should never be called");
     return 0;
 }
