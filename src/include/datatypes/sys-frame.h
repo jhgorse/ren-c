@@ -195,7 +195,14 @@ inline static void INIT_F_EXECUTOR(REBFRM *f, REBNAT executor)
         assert(n != 0 and n <= F_NUM_ARGS(f));
 
         REBVAL *var = f->rootvar + n; // 1-indexed
-        assert(not IS_RELATIVE(cast(RELVAL*, var)));
+
+        // !!! There was a somewhat helpful assert here:
+        //
+        //     assert(not IS_RELATIVE(cast(RELVAL*, var)));
+        //
+        // But this prohibits using the INCLUDE_PARAMS_OF_XXX macros to set
+        // up uninitialized arg variables.  Turn off for now.
+
         return var;
     }
 #endif
