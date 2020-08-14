@@ -268,11 +268,11 @@
     blk: [if 2000 = n: n + 1 [throw <2000>] do blk]
     <2000> = catch blk
 )
-; infinite recursion for string
+; infinite recursion for string (slow, so don't do too deep a recursion)
 [#1896 (
     n: 0
-    str: "if 1000 = n: n + 1 [throw <1000>] do str"
-    <1000> = catch [do str]
+    str: "if 100 = n: n + 1 [throw <100>] do str"
+    <100> = catch [do str]
 )]
 ; infinite recursion for evaluate
 (
