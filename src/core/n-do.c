@@ -332,7 +332,7 @@ REBNATIVE(shove)
         else
             Begin_Prefix_Action(subframe, opt_label);
     }
- 
+
     STATE_BYTE(frame_) = ST_SHOVE_EVALUATING_RIGHT;
     return R_CONTINUATION;
   }

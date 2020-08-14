@@ -68,7 +68,7 @@ REBINT CT_Array(const REBCEL *a, const REBCEL *b, bool strict)
         ){
             return VAL_TYPE(aval) > VAL_TYPE(bval) ? 1 : -1;
         }
- 
+
         REBINT diff = Cmp_Value(aval, bval, strict);
         if (diff != 0)
             return diff;

@@ -705,7 +705,7 @@ REBNATIVE(iterates) {
     // or strings or binaries.
     //
     // Unfortunately since our locks were stack based, they're not counted.
-    // :-(  
+    // :-(
     //
     // We can have an "are there any locks" bit for easy checking by readers,
     // but then the cost gets paid by those holding and releasing locks to

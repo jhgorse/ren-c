@@ -31,14 +31,14 @@
     stuff: []
     log: func [x] [append/only stuff x]
 
-    producer: func [sentence [text!] next-coroutine [action!]] [ 
-        let tokens: split sentence space 
-        for-each token tokens [ 
+    producer: func [sentence [text!] next-coroutine [action!]] [
+        let tokens: split sentence space
+        for-each token tokens [
             next-coroutine token  ; Python says `next_coroutine.send(token)`
-        ] 
+        ]
         next-coroutine null  ; Python says `next_coroutine.close()`
     ]
-  
+
     pattern-filter: func [next-coroutine [action!] /pattern [text!]] [
         pattern: default ["ing"]
         log <start-filtering>
@@ -48,7 +48,7 @@
                 if find token pattern [
                     next-coroutine token
                 ]
-                yield void 
+                yield void
             ]
             next-coroutine null
             log <done-filtering>
@@ -64,12 +64,12 @@
                 yield void
             ]
             log <done-emitting>
-        ] 
+        ]
     ]
 
     et: emit-token
     pf: pattern-filter :et
-  
+
     sentence: "Bob is running behind a fast moving car"
     producer sentence :pf
 

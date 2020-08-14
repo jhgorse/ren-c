@@ -48,7 +48,7 @@
 enum {
     ST_CLEANER_RUNNING_THROWN = 88,
     ST_CLEANER_RUNNING_NORMAL = 101,
-    ST_CLEANER_FINISHED = 255 
+    ST_CLEANER_FINISHED = 255
 };
 
 
@@ -257,7 +257,7 @@ bool Trampoline_Throws(REBFRM *f)
     // state, even if just to pass it through.  The executor may push more
     // frames or change the executor of the frame it receives.
     //
-    
+
     r = (f->executor)(f);  // Note: f may not be FS_TOP at this moment
 
     if (r == R_CONTINUATION) {

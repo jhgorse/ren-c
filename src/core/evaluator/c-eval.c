@@ -729,7 +729,7 @@ REB_R Evaluator_Executor(REBFRM *f)
     // the callsite and you are assumed to know what you are doing:
     //
     //    :foo/(print "side effect" 1)  ; this is allowed
-      
+
       case REB_PATH:
       case REB_GET_PATH: {
         if (MIRROR_BYTE(f_current) == REB_WORD) {
@@ -770,7 +770,7 @@ REB_R Evaluator_Executor(REBFRM *f)
 
         PVS_OPT_LABEL(path_frame) = nullptr;  // state must be initialized
         PVS_OPT_SETVAL(path_frame) = nullptr;  // not a SET-PATH!
-        
+
         STATE_BYTE(f) = ST_EVALUATOR_PROCESSING_GET_PATH;
         return R_CONTINUATION;  // Note: Feed doesn't advance, f_current ok
       }
@@ -1338,7 +1338,7 @@ REB_R Evaluator_Executor(REBFRM *f)
 
 //=//// LOOKAHEAD PROCESSING //////////////////////////////////////////////=//
 
-    // When we are sitting at what "looks like the end" of an evaluation step, 
+    // When we are sitting at what "looks like the end" of an evaluation step,
     // we still have to consider enfix.  e.g.
     //
     //    [pos val]: evaluate [1 + 2 * 3]

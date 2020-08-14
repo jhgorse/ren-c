@@ -466,7 +466,7 @@ REBNATIVE(yield)
     RELVAL* chains = ARR_AT(yielder_details, IDX_YIELDER_CHAINS);
     if (IS_BLOCK(chains))
         Push_Stack_Values(VAL_ARRAY(chains));
-    else 
+    else
         assert(IS_BLANK(chains));
     Init_Unreadable_Void(chains);
 

@@ -234,7 +234,7 @@ REB_R Elider_Dispatcher(REBFRM *f)
             and VAL_BINDING(label) == NOD(f->varlist)
         ){
             CATCH_THROWN(f_spare, f_spare);
-            assert(IS_NULLED(f_spare));  // RETURN errors if arg passed 
+            assert(IS_NULLED(f_spare));  // RETURN errors if arg passed
             return R_INVISIBLE;
         }
 

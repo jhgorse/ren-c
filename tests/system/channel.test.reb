@@ -14,7 +14,7 @@
     go compose [foo (x + 1000)]
     x: 304
 
-   receive-chan done 
+   receive-chan done
 
    did all [
        x = 304
@@ -75,9 +75,9 @@
     stuff: []
     log: func [x] [append/only stuff x]
 
-    producer: func [sentence [text!]] [ 
+    producer: func [sentence [text!]] [
         let out: make-chan
-        let tokens: split sentence space 
+        let tokens: split sentence space
 
         go (func [] [
             for-next t tokens [
@@ -88,7 +88,7 @@
 
         return out
     ]
-  
+
     pattern-filter: func [in "channel" /pattern [text!]] [
         pattern: default ["ing"]
         log <start-filter>
@@ -123,7 +123,7 @@
         return done
     ]
 
-  
+
     sentence: "Bob is running behind a fast moving car"
 
     unfiltered: producer sentence
