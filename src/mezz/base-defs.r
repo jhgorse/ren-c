@@ -23,11 +23,11 @@ REBOL [
     }
 ]
 
-; Start with basic debugging
-
 c-break-debug: :c-debug-break  ; easy to mix up
 
+
 lit: :literal  ; because it's shorter
+
 
 |: enfixed func* [
     "Expression barrier - invisible so it vanishes, but blocks evaluation"
@@ -38,6 +38,11 @@ lit: :literal  ; because it's shorter
 ]
 
 tweak :| 'postpone on
+
+
+; EQUAL? is redefined later, when inheriting SPECIALIZE (no *) is defined
+;
+equal?: specialize* 'compare [operator: '= | strict: false]
 
 
 ??:  ; shorthand form to use in debug sessions, not intended to be committed

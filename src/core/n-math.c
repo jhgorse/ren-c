@@ -440,6 +440,268 @@ REBINT CT_Unhooked(const REBCEL *a, const REBCEL *b, bool strict)
 
 
 //
+//  Comparer_Executor: C
+//
+REB_R Comparer_Executor(REBFRM *f)
+{
+    if (GET_EVAL_FLAG(f, ABRUPT_FAILURE))
+        return R_THROWN;
+
+    REBFRM *frame_ = f;
+    INCLUDE_PARAMS_OF_COMPARE;
+    CLEAR_SERIES_INFO(frame_->varlist, HOLD);  // set by INCLUDE, don't want
+
+    REBSYM op = VAL_WORD_SYM(ARG(operator));
+
+    REBCEL *a = cast(REBCEL*, ARG(left));  // ensured as not in-situ quoted
+    REBCEL *b = cast(REBCEL*, ARG(right));  // same
+
+    // !!! `(first ['a]) = (first [a])` was true in historical Rebol, due
+    // the rules of "lax equality".  These rules are up in the air as they
+    // pertain to the IS and ISN'T transition.  But to avoid having to
+    // worry about changing all the tests right now, this defines quoted
+    // equality as only worryig about the depth in strict equalty.
+    //
+//    if (strict)
+//        if (VAL_NUM_QUOTES(a) != VAL_NUM_QUOTES(b))
+//            return VAL_NUM_QUOTES(a) > VAL_NUM_QUOTES(b) ? 1 : -1;
+
+    // This code wants to modify the value, but we can't modify the
+    // embedded values in highly-escaped literals.  Move the data out.
+
+    enum Reb_Kind ta = CELL_KIND(a);
+    enum Reb_Kind tb = CELL_KIND(b);
+
+    if (ta != tb) {
+        //
+        // !!! R3-Alpha and Red both behave thusly:
+        //
+        //     >> -4.94065645841247E-324 < 0.0
+        //     == true
+        //
+        //     >> -4.94065645841247E-324 = 0.0
+        //     == true
+        //
+        // This is to say that the `=` is operating under non-strict rules,
+        // the `<` is still strict to see the difference.  Kept this way for
+        // compatibility for now.
+        //
+        if (
+            REF(strict) and (
+                (op == SYM_NE or op == SYM_EQ)
+                or not (ANY_NUMBER_KIND(ta) and ANY_NUMBER_KIND(tb))
+            )
+        ){
+            return Init_Logic(D_OUT, op == SYM_NE);
+        }
+
+        // If types not matching is a problem, callers to this routine should
+        // check that for themselves before calling.  It is assumed that
+        // "strict" here still allows coercion, e.g. `1 < 1.1` should work.
+        //
+        switch (ta) {
+          case REB_NULLED:  // less than anything
+            return Init_Logic(D_OUT, op == SYM_LT or op == SYM_LE or op == SYM_NE);
+
+          case REB_INTEGER:
+            if (tb == REB_DECIMAL || tb == REB_PERCENT) {
+                REBDEC dec_a = cast(REBDEC, VAL_INT64(a));
+                Init_Decimal(cast(RELVAL*, a), dec_a);
+                goto compare;
+            }
+            else if (tb == REB_MONEY) {
+                deci amount = int_to_deci(VAL_INT64(a));
+                Init_Money(cast(RELVAL*, a), amount);
+                goto compare;
+            }
+            break;
+
+          case REB_DECIMAL:
+          case REB_PERCENT:
+            if (tb == REB_INTEGER) {
+                REBDEC dec_b = cast(REBDEC, VAL_INT64(b));
+                Init_Decimal(cast(RELVAL*, b), dec_b);
+                goto compare;
+            }
+            else if (tb == REB_MONEY) {
+                Init_Money(cast(RELVAL*, a), decimal_to_deci(VAL_DECIMAL(a)));
+                goto compare;
+            }
+            else if (tb == REB_DECIMAL || tb == REB_PERCENT) // equivalent types
+                goto compare;
+            break;
+
+          case REB_MONEY:
+            if (tb == REB_INTEGER) {
+                Init_Money(cast(RELVAL*, b), int_to_deci(VAL_INT64(b)));
+                goto compare;
+            }
+            if (tb == REB_DECIMAL || tb == REB_PERCENT) {
+                Init_Money(cast(RELVAL*, b), decimal_to_deci(VAL_DECIMAL(b)));
+                goto compare;
+            }
+            break;
+
+          case REB_WORD:
+          case REB_SET_WORD:
+          case REB_GET_WORD:
+          case REB_SYM_WORD:
+            if (ANY_WORD_KIND(CELL_KIND(b))) goto compare;
+            break;
+
+          case REB_TEXT:
+          case REB_FILE:
+          case REB_EMAIL:
+          case REB_URL:
+          case REB_TAG:
+          case REB_ISSUE:
+            if (ANY_STRING_KIND(CELL_KIND(b))) goto compare;
+            break;
+
+          default:
+            break;
+        }
+
+        if (tb == REB_NULLED)  // any non-null left is greater than null
+            return Init_Logic(D_OUT, op == SYM_GT or op == SYM_GE or op == SYM_NE);
+
+        if (not REF(strict)) {
+            if (ta > tb)
+                return Init_Logic(D_OUT, op == SYM_GT or op == SYM_GE or op == SYM_NE);
+            return Init_Logic(D_OUT, op == SYM_LT or op == SYM_LE or op == SYM_NE);
+        }
+
+        if (op == SYM_EQ)
+            return Init_False(D_OUT);
+
+        // !!! Hack to avoid crashing on custom datatypes.  Review in light
+        // of trying to design a working custom type system.
+        //
+        if (ta == REB_CUSTOM)
+            ta = REB_VOID;
+        if (tb == REB_CUSTOM)
+            tb = REB_VOID;
+
+        fail (Error_Invalid_Compare_Raw(
+            Datatype_From_Kind(ta),
+            Datatype_From_Kind(tb)
+        ));
+    }
+
+  compare:;
+
+    enum Reb_Kind kind = CELL_KIND(a);
+
+    if (kind == REB_NULLED) {
+        assert(CELL_KIND(b) == REB_NULLED);
+        return Init_Logic(D_OUT, op == SYM_EQ or op == SYM_GE or op == SYM_LE);
+    }
+
+    // At this point, the types should match...e.g. be able to be passed to
+    // the same comparison dispatcher.  They might not be *exactly* equal.
+    //
+    COMPARE_HOOK *hook = Compare_Hook_For_Type_Of(a);
+    assert(Compare_Hook_For_Type_Of(b) == hook);
+
+    REBINT diff = hook(a, b, REF(strict) ? true : false);
+
+    if (diff == 0)
+        return Init_Logic(D_OUT, op == SYM_EQ or op == SYM_LE or op == SYM_GE);
+    if (diff == 1)
+        return Init_Logic(D_OUT, op == SYM_GT or op == SYM_GE or op == SYM_NE);
+    if (diff == -1)
+        return Init_Logic(D_OUT, op == SYM_LT or op == SYM_LE or op == SYM_NE);
+
+    assert(!"invalid diff value");
+    return Init_Void(D_OUT);
+}
+
+
+//
+//  Pushed_Compare_Frame: C
+//
+// This is a comparison interface that decides whether a frame is needed to
+// do a comparison or not.  If it is not, it returns null.  Otherwise, the
+// answer will be in out.
+//
+REBFRM *Pushed_Compare_Frame(
+    REBVAL *out,
+    enum Reb_Symbol op,
+    const REBVAL *left,
+    const REBVAL *right,
+    bool strict
+){
+    if (
+        strict
+        and VAL_NUM_QUOTES(left) != VAL_NUM_QUOTES(right)
+    ){
+        if (VAL_NUM_QUOTES(left) > VAL_NUM_QUOTES(right))
+            Init_Logic(out, op == SYM_GT or op == SYM_GE or op == SYM_NE);
+        else
+            Init_Logic(out, op == SYM_LT or op == SYM_LE or op == SYM_NE);
+        return nullptr;
+    }
+
+    DECLARE_END_FRAME (frame_, EVAL_MASK_DEFAULT);
+    Push_Frame(out, frame_, &Action_Executor);
+    Push_Action(frame_, NATIVE_ACT(compare), UNBOUND);
+    Begin_Prefix_Action(frame_, nullptr);
+    Drop_Action(frame_);
+    TRASH_CFUNC_IF_DEBUG(REBNAT, frame_->executor);
+    INIT_F_EXECUTOR(frame_, &Comparer_Executor);
+
+    INCLUDE_PARAMS_OF_COMPARE;
+
+    Prep_Cell(ARG(return));
+    Prep_Cell(ARG(operator));
+    Prep_Cell(ARG(left));
+    Prep_Cell(ARG(right));
+    Prep_Cell(ARG(strict));
+    
+    Init_Void(ARG(return));
+    Init_Word(ARG(operator), Canon(op));
+    Move_Value(ARG(left), KNOWN(VAL_UNESCAPED(left)));
+    Move_Value(ARG(right), KNOWN(VAL_UNESCAPED(right)));
+    if (strict)
+        Init_True(ARG(strict));  // !!! Should be the word/path "strict"?
+    else
+        Init_Nulled(ARG(strict));
+
+    return frame_;
+}
+
+
+//
+//  compare: native [
+//      return: [logic! void!]
+//      operator ">, >=, <=, <, =, or <>"
+//          [word!]
+//      left [<opt> any-value!]
+//      right [<opt> any-value!]
+//      /strict
+//  ]
+//
+REBNATIVE(compare)
+{
+    INCLUDE_PARAMS_OF_COMPARE;
+
+    if (nullptr == Pushed_Compare_Frame(
+        D_OUT,
+        cast(enum Reb_Symbol, VAL_WORD_SYM(ARG(operator))),
+        ARG(left),
+        ARG(right),
+        REF(strict) ? true : false
+    )){
+        return D_OUT;  // could do the comparison without spending a frame
+    }
+
+    D_STATE_BYTE = 1;  // needed for delegation
+    SET_EVAL_FLAG(frame_, DELEGATE_CONTROL);
+    return R_CONTINUATION;
+}
+
+
+//
 //  Compare_Modify_Values: C
 //
 // Compare 2 values depending on level of strictness.
@@ -590,94 +852,6 @@ REBINT Compare_Modify_Values(RELVAL *a, RELVAL *b, bool strict)
 }
 
 
-//  EQUAL? < EQUIV? < STRICT-EQUAL? < SAME?
-
-//
-//  equal?: native [
-//
-//  {TRUE if the values are equal}
-//
-//      return: [logic!]
-//      value1 [<opt> any-value!]
-//      value2 [<opt> any-value!]
-//  ]
-//
-REBNATIVE(equal_q)
-{
-    INCLUDE_PARAMS_OF_EQUAL_Q;
-
-    bool strict = false;
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff == 0);
-}
-
-
-//
-//  not-equal?: native [
-//
-//  {TRUE if the values are not equal}
-//
-//      return: [logic!]
-//      value1 [<opt> any-value!]
-//      value2 [<opt> any-value!]
-//  ]
-//
-REBNATIVE(not_equal_q)
-{
-    INCLUDE_PARAMS_OF_NOT_EQUAL_Q;
-
-    bool strict = false;
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff != 0);
-}
-
-
-//
-//  strict-equal?: native [
-//
-//  {TRUE if the values are strictly equal}
-//
-//      return: [logic!]
-//      value1 [<opt> any-value!]
-//      value2 [<opt> any-value!]
-//  ]
-//
-REBNATIVE(strict_equal_q)
-{
-    INCLUDE_PARAMS_OF_STRICT_EQUAL_Q;
-
-    if (VAL_TYPE(ARG(value1)) != VAL_TYPE(ARG(value2)))
-        return Init_False(D_OUT);  // don't allow coercion
-
-    bool strict = true;
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff == 0);
-}
-
-
-//
-//  strict-not-equal?: native [
-//
-//  {TRUE if the values are not strictly equal}
-//
-//      return: [logic!]
-//      value1 [<opt> any-value!]
-//      value2 [<opt> any-value!]
-//  ]
-//
-REBNATIVE(strict_not_equal_q)
-{
-    INCLUDE_PARAMS_OF_STRICT_NOT_EQUAL_Q;
-
-    if (VAL_TYPE(ARG(value1)) != VAL_TYPE(ARG(value2)))
-        return Init_True(D_OUT);  // don't allow coercion
-
-    bool strict = true;
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff != 0);
-}
-
-
 //
 //  same?: native [
 //
@@ -761,96 +935,7 @@ REBNATIVE(same_q)
     // seems that "sameness" should go through whatever extension mechanism
     // for comparison user defined types would have.
     //
-    bool strict = true;
-    return Init_Logic(D_OUT, Compare_Modify_Values(v1, v2, strict) == 0);
-}
-
-
-//
-//  lesser?: native [
-//
-//  {TRUE if the first value is less than the second value}
-//
-//      return: [logic!]
-//      value1 value2
-//  ]
-//
-REBNATIVE(lesser_q)
-{
-    INCLUDE_PARAMS_OF_LESSER_Q;
-
-    // !!! R3-Alpha and Red both behave thusly:
-    //
-    //     >> -4.94065645841247E-324 < 0.0
-    //     == true
-    //
-    //     >> -4.94065645841247E-324 = 0.0
-    //     == true
-    //
-    // This is to say that the `=` is operating under non-strict rules, while
-    // the `<` is still strict to see the difference.  Kept this way for
-    // compatibility for now.
-    //
-    bool strict = true;
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff == -1);
-}
-
-
-//
-//  equal-or-lesser?: native [
-//
-//  {TRUE if the first value is equal to or less than the second value}
-//
-//      return: [logic!]
-//      value1 value2
-//  ]
-//
-REBNATIVE(equal_or_lesser_q)
-{
-    INCLUDE_PARAMS_OF_EQUAL_OR_LESSER_Q;
-
-    bool strict = true;  // see notes in LESSER?
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff == -1 or diff == 0);
-}
-
-
-//
-//  greater?: native [
-//
-//  {TRUE if the first value is greater than the second value}
-//
-//      return: [logic!]
-//      value1 value2
-//  ]
-//
-REBNATIVE(greater_q)
-{
-    INCLUDE_PARAMS_OF_GREATER_Q;
-
-    bool strict = true;  // see notes in LESSER?
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff == 1);
-}
-
-
-//
-//  greater-or-equal?: native [
-//
-//  {TRUE if the first value is greater than or equal to the second value}
-//
-//      return: [logic!]
-//      value1 value2
-//  ]
-//
-REBNATIVE(greater_or_equal_q)
-{
-    INCLUDE_PARAMS_OF_GREATER_OR_EQUAL_Q;
-
-    bool strict = true;  // see notes in LESSER?
-    REBINT diff = Compare_Modify_Values(ARG(value1), ARG(value2), strict);
-    return Init_Logic(D_OUT, diff == 1 or diff == 0);
+    return rebValueQ("compare/strict '=", v1, v2, rebEND);
 }
 
 

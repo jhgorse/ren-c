@@ -441,3 +441,12 @@ exec
 ; binding and execution of operations like division, in spite of being PATH!.
 ;
 -slash-1-
+
+; In the attempt to implement "rich compare" as per Python, passing in the
+; operator word to COMPARE seems the most natural way to do it.
+<
+>
+=
+<>
+>=
+<=

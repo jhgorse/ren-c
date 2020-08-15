@@ -78,6 +78,13 @@ to-c-name: function [
         "~" [copy "tilde"]
         "|" [copy "bar"]
 
+        "<" [copy "lt"]
+        ">" [copy "gt"]
+        "=" [copy "eq"]
+        ">=" [copy "ge"]
+        "<=" [copy "le"]
+        "<>" [copy "ne"]
+
         default [
             ;
             ; If these symbols occur composite in a longer word, they use a

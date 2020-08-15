@@ -763,6 +763,7 @@ REBNATIVE(iterates) {
 //          [any-number!]
 //      body "Code to evaluate"
 //          [<const> block! action!]
+//      <local> counting-up
 //  ]
 //
 REBNATIVE(for)
@@ -771,20 +772,30 @@ REBNATIVE(for)
 
     enum {
         ST_FOR_INITIAL_ENTRY = 0,
+        ST_FOR_SEE_IF_START_EQUALS_END,
+        ST_FOR_FINDING_STEP_DIRECTION,
+        ST_FOR_CHECKING_BUMP,
         ST_FOR_SINGLE_RUN,  // edge case when start = end
-        ST_FOR_RUNNING_BODY
+        ST_FOR_RUNNING_BODY,
+        ST_FOR_TESTING_IF_DONE
     };
 
     REBVAL *start = ARG(start);
     REBVAL *end = ARG(end);
     REBVAL *bump = ARG(bump);
 
-    REBVAL *counting_up = D_SPARE;
+    REBVAL *counting_up = ARG(counting_up);
+
+    const bool strict = false;  // all numeric comparisons are "lax"
 
     switch (D_STATE_BYTE) {
       case ST_FOR_INITIAL_ENTRY: goto initial_entry;
+      case ST_FOR_SEE_IF_START_EQUALS_END: goto single_run_decision_made;
+      case ST_FOR_FINDING_STEP_DIRECTION: goto step_direction_decided;
+      case ST_FOR_CHECKING_BUMP: goto bump_check_ready;
       case ST_FOR_SINGLE_RUN: goto body_finished_or_threw;  // checks state
       case ST_FOR_RUNNING_BODY: goto body_finished_or_threw;  // checks state
+      case ST_FOR_TESTING_IF_DONE: goto run_body_decision_made;
       default: assert(false);
     }
 
@@ -809,7 +820,15 @@ REBNATIVE(for)
 
     // Run only once if start is equal to end...edge case.
     //
-    if (rebDid(NATIVE_VAL(equal_q), start, end, rebEND)) {
+    if (Pushed_Compare_Frame(D_SPARE, SYM_EQ, start, end, strict)) {
+        D_STATE_BYTE = ST_FOR_SEE_IF_START_EQUALS_END;
+        return R_CONTINUATION;
+    }
+    goto single_run_decision_made;
+  }
+
+  single_run_decision_made: {
+    if (VAL_LOGIC(D_SPARE)) {
         D_STATE_BYTE = ST_FOR_SINGLE_RUN;
         CONTINUE_CATCHABLE (ARG(body));
     }
@@ -818,13 +837,37 @@ REBNATIVE(for)
     // FOR loop.  (R3-Alpha used the sign of the bump, which meant it did not
     // have a clear plan for what to do with 0.)
     //
-    Init_Logic(counting_up, rebDid(NATIVE_VAL(lesser_q), start, end, rebEND));
-    if (
-        (VAL_LOGIC(counting_up) and rebDid(bump, "<= 0", rebEND))
-        or (not VAL_LOGIC(counting_up) and rebDid(bump, ">= 0", rebEND))
-    ){
-        return Init_Blank(D_OUT);  // avoid infinite loop, blank -> never ran
+    if (Pushed_Compare_Frame(D_SPARE, SYM_LT, start, end, strict)) {
+        D_STATE_BYTE = ST_FOR_FINDING_STEP_DIRECTION;
+        return R_CONTINUATION;
     }
+    goto step_direction_decided;
+  }
+
+  step_direction_decided: {
+    Init_Logic(counting_up, VAL_LOGIC(D_SPARE));
+
+    DECLARE_LOCAL (zero);
+    Init_Integer(zero, 0);
+
+    // Counting up with bump <= 0, or counting down with bump >= 0, infinite
+    //
+    if (Pushed_Compare_Frame(
+        D_SPARE,
+        VAL_LOGIC(counting_up) ? SYM_LE : SYM_GE,
+        bump,
+        zero,
+        strict
+    )){
+        D_STATE_BYTE = ST_FOR_CHECKING_BUMP;
+        return R_CONTINUATION;
+    }
+    goto bump_check_ready;
+  }
+
+  bump_check_ready: {
+    if (VAL_LOGIC(D_SPARE))
+        return Init_Blank(D_OUT);  // avoid infinite loop, blank -> never ran
 
     goto decide_whether_to_run_body;
   }
@@ -857,14 +900,24 @@ REBNATIVE(for)
   }
 
   decide_whether_to_run_body: {
-    if (VAL_LOGIC(counting_up)) {
-        if (rebDid(NATIVE_VAL(greater_q), var, end, rebEND))
-            return D_OUT;
+    context = VAL_CONTEXT(ARG(var));
+    var = CTX_VAR(context, 1);
+    if (Pushed_Compare_Frame(
+        D_SPARE,
+        VAL_LOGIC(counting_up) ? SYM_GT : SYM_LT,
+        var,
+        end,
+        strict
+    )){
+        D_STATE_BYTE = ST_FOR_TESTING_IF_DONE;
+        return R_CONTINUATION;
     }
-    else {
-        if (rebDid(NATIVE_VAL(lesser_q), var, end, rebEND))
-            return D_OUT;
-    }
+    goto run_body_decision_made;
+  }
+
+  run_body_decision_made: {
+    if (VAL_LOGIC(D_SPARE))
+        return D_OUT;
 
     D_STATE_BYTE = ST_FOR_RUNNING_BODY;
     CONTINUE_CATCHABLE (ARG(body));

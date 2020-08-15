@@ -443,6 +443,17 @@ redescribe [
     {Create an ACTION, implicity gathering SET-WORD!s as <local> by default}
 ] :function
 
+
+equal?: specialize 'compare [operator: '= | strict: false]  ; non * version
+strict-equal?: specialize 'compare [operator: '= | strict: true]
+not-equal?: specialize 'compare [operator: '<> | strict: false]
+strict-not-equal?: specialize 'compare [operator: '<> | strict: true]
+lesser?: specialize 'compare [operator: '< | strict: true]
+greater?: specialize 'compare [operator: '> | strict: true]
+greater-or-equal?: specialize 'compare [operator: '>= | strict: true]
+equal-or-lesser?: specialize 'compare [operator: '<= | strict: true]
+
+
 unset: redescribe [
     {Clear the value of a word to null (in its current context.)}
 ](
