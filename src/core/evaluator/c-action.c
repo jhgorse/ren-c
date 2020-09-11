@@ -407,6 +407,7 @@ REB_R Action_Executor(REBFRM *f)
 
       skip_this_arg_for_now:  // the GC marks args up through f_arg...
 
+        Prep_Cell(f_arg);
         Init_Unreadable_Void(f_arg);  // ...so cell must have valid bits
         continue;
 
@@ -416,26 +417,6 @@ REB_R Action_Executor(REBFRM *f)
 
         if (GET_EVAL_FLAG(f, DOING_PICKUPS))
             goto fulfill_arg;
-
-        // !!! If not an APPLY or a typecheck of existing values, the data
-        // array which backs the frame may not have any initialization of
-        // its bits.  The goal is to make it so that the GC uses the
-        // f_param position to know how far the frame fulfillment is
-        // gotten, and only mark those values.  Hoewver, there is also
-        // a desire to differentiate cell formatting between "stack"
-        // and "heap" to do certain optimizations.  After a recent change,
-        // it's becoming more integrated by using pooled memory for the
-        // args...however issues of stamping the bits remain.  This just
-        // blindly formats them with NODE_FLAG_STACK to make the arg
-        // initialization work, but it's in progress to do this more
-        // subtly so that the frame can be left formatted as non-stack.
-        //
-        if (
-            NOT_EVAL_FLAG(f, DOING_PICKUPS)
-            and not SPECIAL_IS_ARG_SO_TYPECHECKING
-        ){
-            Prep_Cell(f_arg);  // improve...
-        }
 
     //=//// A /REFINEMENT ARG /////////////////////////////////////////////=//
 
@@ -473,6 +454,7 @@ REB_R Action_Executor(REBFRM *f)
             // A specialization....
 
             if (GET_CELL_FLAG(f_special, ARG_MARKED_CHECKED)) {
+                Prep_Cell(f_arg);
                 Move_Value(f_arg, f_special);
                 SET_CELL_FLAG(f_arg, ARG_MARKED_CHECKED);
                 goto continue_arg_loop;  // !!! Double-check?
@@ -530,6 +512,7 @@ REB_R Action_Executor(REBFRM *f)
 
           unused_refinement:  // Note: might get pushed by a later slot
 
+            Prep_Cell(f_arg);
             Init_Nulled(f_arg);
             SET_CELL_FLAG(f_arg, ARG_MARKED_CHECKED);
             goto continue_arg_loop;
@@ -540,6 +523,7 @@ REB_R Action_Executor(REBFRM *f)
                 /* type checking */
             }
             else {
+                Prep_Cell(f_arg);
                 Refinify(Init_Word(f_arg, VAL_PARAM_SPELLING(f_param)));
             }
             SET_CELL_FLAG(f_arg, ARG_MARKED_CHECKED);
@@ -567,6 +551,7 @@ REB_R Action_Executor(REBFRM *f)
             if (SPECIAL_IS_ARBITRARY_SO_SPECIALIZED)
                 assert(IS_NULLED(f_special) or IS_VOID(f_special));
 
+            Prep_Cell(f_arg);  // Note: may be typechecking
             Init_Void(f_arg);
             SET_CELL_FLAG(f_arg, ARG_MARKED_CHECKED);
             goto continue_arg_loop;
@@ -592,6 +577,7 @@ REB_R Action_Executor(REBFRM *f)
                     or IS_VARARGS(f_special)
                 );
 
+                Prep_Cell(f_arg);
                 Move_Value(f_arg, f_special);  // won't copy the bit
                 SET_CELL_FLAG(f_arg, ARG_MARKED_CHECKED);
             }
@@ -634,6 +620,10 @@ REB_R Action_Executor(REBFRM *f)
                 Finalize_Arg(f);
             goto continue_arg_loop;  // looping to verify args/refines
         }
+
+    //=//// NOT JUST TYPECHECKING, SO PREPARE ARGUMENT CELL ///////////////=//
+
+        Prep_Cell(f_arg);
 
     //=//// HANDLE IF NEXT ARG IS IN OUT SLOT (e.g. ENFIX, CHAIN) /////////=//
 
