@@ -933,7 +933,7 @@ REBNATIVE(applique)
         DS_DROP_TO(lowest_ordered_dsp); // zero refinements on stack, now
     }
 
-    TRASH_POINTER_IF_DEBUG(f->executor);
+    TRASH_CFUNC_IF_DEBUG(REBNAT, f->executor);
     INIT_F_EXECUTOR(f, &Action_Executor);
 
     f->varlist = CTX_VARLIST(stolen);

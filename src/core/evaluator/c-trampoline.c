@@ -214,7 +214,7 @@ bool Trampoline_Throws(REBFRM *f)
     //
     f = FS_TOP;
 
-  bounce:  // ...on the trampoline.  :-)
+  bounce: ;  // ...on the trampoline.  :-)
 
     REB_R r;
 

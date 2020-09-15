@@ -1075,7 +1075,7 @@ REBNATIVE(case)
 
     f = FS_TOP;
     assert(f->prior == frame_);  // !!! review this guaranteee
-    assert(IS_POINTER_TRASH_DEBUG(f->executor));
+    assert(IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
 
     switch (D_STATE_BYTE) {
       case ST_CASE_EVALUATING_CONDITION:
@@ -1258,7 +1258,7 @@ REBNATIVE(case)
     // !!! The `f` frame is on top, holding state for the enumeration.  We are
     // going to push another frame which will need its own enumeration state.
     //
-    assert(IS_POINTER_TRASH_DEBUG(f->executor));
+    assert(IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));
     STATE_BYTE(f) = 0;
     INIT_F_EXECUTOR(f, &Just_Use_Out_Executor);
     f->out = D_OUT;

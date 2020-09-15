@@ -107,7 +107,7 @@ REBNATIVE(reduce)
 
     REBFRM *f = FS_TOP;
     assert(f->prior == frame_);  // review this guarantee
-    assert(IS_POINTER_TRASH_DEBUG(f->executor));  // step should've completed
+    assert(IS_CFUNC_TRASH_DEBUG(REBNAT, f->executor));  // should've completed
     assert(GET_EVAL_FLAG(f, TRAMPOLINE_KEEPALIVE));  // flag is not cleared
 
     if (IS_END(D_OUT)) {  // e.g. `reduce []` or `reduce [comment "hi"]`

@@ -682,7 +682,7 @@ REBNATIVE(pick)
         panic ("Unsupported return value in Path Dispatcher");
     }
 
-    TRASH_POINTER_IF_DEBUG(pvs->executor);
+    TRASH_CFUNC_IF_DEBUG(REBNAT, pvs->executor);
     Drop_Frame(pvs);
     return r;
 }
@@ -755,7 +755,7 @@ REBNATIVE(poke)
         fail (PVS_PICKER(pvs));  // raise error in release build
     }
 
-    TRASH_POINTER_IF_DEBUG(pvs->executor);
+    TRASH_CFUNC_IF_DEBUG(REBNAT, pvs->executor);
     Drop_Frame(pvs);
 
     RETURN (ARG(value)); // return the value we got in
