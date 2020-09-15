@@ -829,6 +829,9 @@ REBNATIVE(applique)
 
     REBVAL *applicand = ARG(applicand);
 
+    // !!! This EVAL_FLAG_ROOT_FRAME is a problem if an error gets thrown
+    // before the call to Trampoline_Throws.
+    //
     REBFLGS flags = EVAL_MASK_DEFAULT | EVAL_FLAG_ROOT_FRAME;
     if (not REF(opt))
         flags |= EVAL_FLAG_FULLY_SPECIALIZED;
