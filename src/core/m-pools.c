@@ -1087,7 +1087,7 @@ void Decay_Series(REBSER *s)
         break;
 
       case FLAVOR_SYMBOL:
-        GC_Kill_Interning(STR(s));  // special handling can adjust canons
+        GC_Kill_Interning(SYM(s));  // special handling can adjust canons
         break;
 
       case FLAVOR_PATCH: {

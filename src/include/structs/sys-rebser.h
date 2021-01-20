@@ -824,6 +824,9 @@ union Reb_Series_Info {
     struct Reb_Symbol : public Reb_String {};  // word-constrained strings
     typedef struct Reb_Symbol REBSYM;
 
+    struct Reb_Canon : public Reb_Symbol {};  // all-lowercase symbol
+    typedef struct Reb_Canon REBCAN;
+
     struct Reb_Bookmark_List : public Reb_Series {};
     typedef struct Reb_Bookmark_List REBBMK;  // list of UTF-8 index=>offsets
 
@@ -831,6 +834,7 @@ union Reb_Series_Info {
     typedef struct Reb_Series REBBIN;
     typedef struct Reb_Series REBSTR;
     typedef struct Reb_Series REBSYM;
+    typedef struct Reb_Series REBCAN;
     typedef struct Reb_Series REBBMK;
 #endif
 
@@ -839,7 +843,14 @@ union Reb_Series_Info {
 // things we increment across aren't REBSER nodes, but pointers to REBSER
 // nodes for the strings... so a "key" is a pointer.
 //
-typedef const REBSYM *REBKEY;
+// Due to strong philosophical feelings that Redbol languages should be case
+// insensitive when it comes to binding, object keys must be canon symbols
+// (REBCAN), e.g. lowercase canonized.  Having case-insensitive lookup but
+// preserving case in keys would lead to inconsistent states.
+//
+// https://forum.rebol.info/t/1439
+//
+typedef const REBCAN *REBKEY;
 
 
 //=//// DON'T PUT ANY CODE (OR MACROS THAT MAY NEED CODE) IN THIS FILE! ///=//

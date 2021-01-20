@@ -36,18 +36,6 @@
 //
 
 
-// For a *read-only* REBSYM, circularly linked list of othEr-CaSed string
-// forms.  It should be relatively quick to find the canon form on
-// average, since many-cased forms are somewhat rare.
-//
-// Note: String series using this don't have SERIES_FLAG_LINK_NODE_NEEDS_MARK.
-// One synonym need not keep another alive, because the process of freeing
-// string nodes unlinks them from the list.  (Hence the canon can change!)
-//
-#define LINK_Synonym_TYPE       const REBSYM*
-#define LINK_Synonym_CAST       SYM
-#define HAS_LINK_Synonym        FLAVOR_SYMBOL
-
 #if defined(NDEBUG) || !defined(CPLUSPLUS_11)
     //
     // Trivial definition for C build or release builds: symbols are just a C
@@ -128,10 +116,10 @@ inline static bool Same_Nonzero_Symid(SYMID a, SYMID b) {
 inline static OPT_SYMID ID_OF_SYMBOL(const REBSYM *s)
   { return cast(SYMID, SECOND_UINT16(s->info)); }
 
-inline static const REBSYM *Canon(SYMID symid) {
+inline static const REBCAN *Canon(SYMID symid) {
     assert(cast(REBLEN, symid) != 0);
     assert(cast(REBLEN, symid) < SER_USED(PG_Symbol_Canons));  // null if boot
-    return *SER_AT(const REBSYM*, PG_Symbol_Canons, cast(REBLEN, symid));
+    return *SER_AT(const REBCAN*, PG_Symbol_Canons, cast(REBLEN, symid));
 }
 
 inline static bool Are_Synonyms(const REBSYM *s1, const REBSYM *s2) {
@@ -139,7 +127,14 @@ inline static bool Are_Synonyms(const REBSYM *s1, const REBSYM *s2) {
     do {
         if (temp == s2)
             return true;
-    } while ((temp = LINK(Synonym, temp)) != s1);
+    } while ((temp = LINK(NextSynonym, temp)) != s1);
 
     return false;  // stopped when circularly linked list loops back to self
+}
+
+inline static const REBCAN *SYM_CANON(const REBSYM *s) {
+    if (GET_SUBCLASS_FLAG(SYMBOL, s, IS_CANON))
+        return CAN(s);
+
+    return MISC(CanonOfSynonym, s);
 }

@@ -285,3 +285,8 @@ inline static REBMAP *MAP(void *p) {  // not a fancy cast ATM.
     assert(IS_PAIRLIST(a));
     return cast(REBMAP*, a);
 }
+
+inline static const REBCAN *CAN(const REBNOD *n) {
+    assert(SER(n)->leader.bits & SYMBOL_FLAG_IS_CANON);
+    return x_cast(const REBCAN*, n);
+}

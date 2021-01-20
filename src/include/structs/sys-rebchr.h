@@ -161,3 +161,31 @@
     #error "DEBUG_UTF8_EVERYWHERE currently requires DEBUG_CHECK_CASTS"
   #endif
 #endif
+
+
+// For a *read-only* REBSYM, circularly linked list of othEr-CaSed string
+// forms.  It should be relatively quick to find the canon form on
+// average, since many-cased forms are somewhat rare.
+//
+// Note: String series using this don't have SERIES_FLAG_LINK_NODE_NEEDS_MARK.
+// One synonym need not keep another alive, because the process of freeing
+// string nodes unlinks them from the list.
+//
+#define LINK_NextSynonym_TYPE       const REBSYM*
+#define LINK_NextSynonym_CAST       SYM
+#define HAS_LINK_NextSynonym        FLAVOR_SYMBOL
+
+// We don't want to GC canons unless all the synonyms are freed.  An easy way
+// to do this marking is to have the synonyms point to the canons...though
+// it is a bit wasteful since the canon can be reached through the non-marking
+// circularly linked list.  But since synonyms may or may not exist for a
+// canon, it's not clear how the space would be otherwise exploited, so having
+// it cover the tricky GC condition seems all right.
+//
+#define MISC_CanonOfSynonym_TYPE    const REBSYM*
+#define MISC_CanonOfSynonym_CAST    CAN
+#define HAS_MISC_CanonOfSynonym     FLAVOR_SYMBOL
+
+
+#define SYMBOL_FLAG_IS_CANON \
+    SERIES_FLAG_24
