@@ -796,7 +796,7 @@ bool Eval_Maybe_Stale_Throws(REBFRM * const f)
 
       case REB_PATH:
       case REB_TUPLE: {
-        if (HEART_BYTE(v) == REB_WORD)
+        if (HEART3X_BYTE(v) == REB_WORD)
             goto process_word;  // special `/` or `.` case with hidden word
 
         const RELVAL *head = VAL_SEQUENCE_AT(f_spare, v, 0);
@@ -900,7 +900,7 @@ bool Eval_Maybe_Stale_Throws(REBFRM * const f)
 
       case REB_SET_PATH:
       case REB_SET_TUPLE: {
-        if (HEART_BYTE(v) == REB_WORD) {
+        if (HEART3X_BYTE(v) == REB_WORD) {
             assert(VAL_WORD_ID(v) == SYM__SLASH_1_);
             goto process_set_word;
         }
@@ -941,7 +941,7 @@ bool Eval_Maybe_Stale_Throws(REBFRM * const f)
 
       case REB_GET_PATH:
       case REB_GET_TUPLE:
-        if (HEART_BYTE(v) == REB_WORD) {
+        if (HEART3X_BYTE(v) == REB_WORD) {
             assert(VAL_WORD_ID(v) == SYM__SLASH_1_);
             goto process_get_word;
         }
@@ -1090,7 +1090,7 @@ bool Eval_Maybe_Stale_Throws(REBFRM * const f)
         //
         Derelativize(f->out, v, f_specifier);
         mutable_KIND3Q_BYTE(f->out) = REB_BLOCK;
-        mutable_HEART_BYTE(f->out) = REB_BLOCK;
+        mutable_HEART3X_BYTE(f->out) = REB_BLOCK;
 
         // Get the next argument as an ACTION!, specialized if necessary, into
         // the `spare`.  We'll specialize it further to set any output
@@ -1373,7 +1373,7 @@ bool Eval_Maybe_Stale_Throws(REBFRM * const f)
       case REB_PATH: {  // need to check for lookahead *if* just a `/`
         if (
             GET_FEED_FLAG(f->feed, NO_LOOKAHEAD)
-            or HEART_BYTE(f_next) != REB_WORD
+            or HEART3X_BYTE(f_next) != REB_WORD
         ){
             CLEAR_FEED_FLAG(f->feed, NO_LOOKAHEAD);
             goto finished;
