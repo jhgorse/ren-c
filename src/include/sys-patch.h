@@ -78,15 +78,18 @@
 
 
 // Next node is either to another patch, a frame specifier REBCTX, or nullptr.
-//
+// Note that we use canon spellings for the word, so it should be safe to
+// assume it is a REBCEL()
+
 #define NextPatchNode(patch) \
     *m_cast(REBNOD**, &PAYLOAD(Any, ARR_SINGLE(patch)).first.node)
 
 #define NextPatch(patch) \
-    VAL_WORD_CACHE(ARR_SINGLE(patch))
+    VAL_WORD_CACHE(cast(REBCEL(const*), ARR_SINGLE(patch)))
 
 #define INIT_NEXT_PATCH(patch, specifier) \
-    INIT_VAL_WORD_CACHE(ARR_SINGLE(patch), (specifier))
+    INIT_VAL_WORD_CACHE(cast(REBCEL(const*), ARR_SINGLE(patch)), (specifier))
+
 
 // The link slot for patches is available for use...
 //

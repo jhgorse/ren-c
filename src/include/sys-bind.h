@@ -503,19 +503,20 @@ inline static option(REBCTX*) Get_Word_Context(
     // matches the cache in the word, then trust the information in it...
     // whether that's a hit or a miss.
     //
-    if (specifier == VAL_WORD_CACHE(any_word)) {
+    REBCEL(const*) cell = VAL_UNESCAPED(any_word);
+    if (specifier == VAL_WORD_CACHE(cell)) {
         //
         // Since the number of bits available in a virtual bind is limited,
         // the value stored is the index modulo MONDEX_MOD.  A miss is
         // recorded with the actual value MONDEX_MOD (since 0 can be an
         // actual modulus result).
         //
-        REBLEN mondex = VAL_WORD_VIRTUAL_MONDEX_UNCHECKED(any_word);
+        REBLEN mondex = VAL_WORD_VIRTUAL_MONDEX_UNCHECKED(cell);
         if (mondex == MONDEX_MOD)
             goto virtual_miss;
 
       blockscope {
-        const REBCAN *canon = VAL_WORD_CANON(VAL_UNESCAPED(any_word));
+        const REBCAN *canon = VAL_WORD_CANON(cell);
 
         // We have the primary binding's spelling to check against, so we
         // can recognize when the lossy index matches up.  It needs to match
@@ -529,7 +530,7 @@ inline static option(REBCTX*) Get_Word_Context(
             assert(IS_PATCH(specifier));
             if (
                 IS_SET_WORD(ARR_SINGLE(specifier))
-                and REB_SET_WORD != CELL_KIND(VAL_UNESCAPED(any_word))
+                and REB_SET_WORD != CELL_KIND(cell)
             ){
                 goto skip_hit_patch;
             }
@@ -571,9 +572,9 @@ inline static option(REBCTX*) Get_Word_Context(
         // this word is overridden without doing a linear search.  Do it
         // and then save the hit or miss information in the word for next use.
         //
-        INIT_VAL_WORD_CACHE(any_word, specifier);  // we're updating it
+        INIT_VAL_WORD_CACHE(cell, specifier);  // we're updating it
 
-        const REBCAN *canon = VAL_WORD_CANON(VAL_UNESCAPED(any_word));
+        const REBCAN *canon = VAL_WORD_CANON(cell);
 
         // !!! Virtual binding could use the bind table as a kind of next
         // level cache if it encounters a large enough object to make it
@@ -582,7 +583,7 @@ inline static option(REBCTX*) Get_Word_Context(
         do {
             if (
                 IS_SET_WORD(ARR_SINGLE(specifier))
-                and REB_SET_WORD != CELL_KIND(VAL_UNESCAPED(any_word))
+                and REB_SET_WORD != CELL_KIND(cell)
             ){
                 goto skip_miss_patch;
             }
@@ -614,7 +615,7 @@ inline static option(REBCTX*) Get_Word_Context(
                 // since specifier chains change frames for relativization,
                 // we have to store the head of the chain.  Review.
                 //
-                INIT_VAL_WORD_VIRTUAL_MONDEX(any_word, index % MONDEX_MOD);
+                INIT_VAL_WORD_VIRTUAL_MONDEX(cell, index % MONDEX_MOD);
                 *index_out = index;
                 return overload;
             }
@@ -627,7 +628,7 @@ inline static option(REBCTX*) Get_Word_Context(
 
         // Update the cache to say we miss on this particular specifier
         //
-        INIT_VAL_WORD_VIRTUAL_MONDEX(any_word, MONDEX_MOD);
+        INIT_VAL_WORD_VIRTUAL_MONDEX(cell, MONDEX_MOD);
 
         // The linked list of specifiers bottoms out with either null or the
         // varlist of the frame we want to bind relative values with.  So
@@ -869,8 +870,9 @@ inline static REBVAL *Derelativize(
         // We don't want to do this with REB_QUOTED since the cache is shared.
         //
         if (KIND3Q_BYTE_UNCHECKED(v) != REB_QUOTED) {
-            INIT_VAL_WORD_CACHE(out, UNSPECIFIED);
-            INIT_VAL_WORD_VIRTUAL_MONDEX(out, MONDEX_MOD);  // necessary?
+            REBCEL(const*) out_cell = cast(REBCEL(const*), out);
+            INIT_VAL_WORD_CACHE(out_cell, UNSPECIFIED);
+            INIT_VAL_WORD_VIRTUAL_MONDEX(out_cell, MONDEX_MOD);  // necessary?
         }
         return cast(REBVAL*, out);
     }
