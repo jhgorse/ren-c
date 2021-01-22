@@ -353,27 +353,6 @@ inline static REBARR *VAL_WORD_BINDING(const RELVAL *v) {
     return ARR(binding);
 }
 
-inline static void INIT_VAL_WORD_BINDING(RELVAL *v, const REBSER *binding) {
-    assert(ANY_WORD_KIND(CELL_HEART(VAL_UNESCAPED(v))));
-
-    assert(binding);  // can't set word bindings to nullptr
-    mutable_BINDING(v) = binding;
-
-  #if !defined(NDEBUG)
-    if (IS_SYMBOL(binding))
-        return;  // e.g. UNBOUND (words use strings to indicate unbounds)
-
-    if (binding->leader.bits & NODE_FLAG_MANAGED) {
-        assert(
-            IS_DETAILS(binding)  // relative
-            or IS_VARLIST(binding)  // specific
-        );
-    }
-    else
-        assert(IS_VARLIST(binding));
-  #endif
-}
-
 
 // While ideally error messages would give back data that is bound exactly to
 // the context that was applicable, threading the specifier into many cases
@@ -400,6 +379,7 @@ inline static REBVAL* Unrelativize(RELVAL* out, const RELVAL* v) {
 //
 #define rebUnrelativize(v) \
     Unrelativize(Alloc_Value(), (v))
+
 
 inline static void Unbind_Any_Word(RELVAL *v) {
     const REBSTR *spelling = VAL_WORD_SYMBOL(VAL_UNESCAPED(v));
@@ -454,6 +434,9 @@ inline static OPT_SYMID VAL_WORD_ID(REBCEL(const*) v) {
     assert(PG_Symbol_Canons);  // all syms are 0 prior to Init_Symbols()
     return ID_OF_CANON(VAL_WORD_CANON(v));
 }
+
+#define VAL_WORD_STORED_CANON(cell) \
+    CAN(VAL_WORD_SYMBOL(cell))  // !!! This may become more optimizable
 
 
 //=////////////////////////////////////////////////////////////////////////=//
@@ -916,13 +899,12 @@ inline static REBVAL *Derelativize(
     return cast(REBVAL*, out);
 }
 
-
-// In the C++ build, defining this overload that takes a REBVAL* instead of
-// a RELVAL*, and then not defining it...will tell you that you do not need
-// to use Derelativize.  Juse Move_Value() if your source is a REBVAL!
-//
 #ifdef CPLUSPLUS_11
-    REBVAL *Derelativize(RELVAL *dest, const REBVAL *v, REBSPC *specifier);
+    REBVAL *Derelativize(
+        RELVAL *dest,
+        const REBVAL *v,  // use Move_Value() if source is already REBVAL*
+        REBSPC *specifier
+    ) = delete;
 #endif
 
 

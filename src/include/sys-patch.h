@@ -134,6 +134,51 @@
 #endif
 
 
+inline static void INIT_VAL_WORD_BINDING(RELVAL *v, const REBSER *binding) {
+    assert(ANY_WORD_KIND(CELL_HEART(VAL_UNESCAPED(v))));
+
+    assert(binding);  // can't set word bindings to nullptr
+    mutable_BINDING(v) = binding;
+
+  #if !defined(NDEBUG)
+    if (IS_SYMBOL(binding))
+        return;  // e.g. UNBOUND (words use strings to indicate unbounds)
+
+    if (binding->leader.bits & NODE_FLAG_MANAGED) {
+        assert(
+            IS_DETAILS(binding)  // relative
+            or IS_VARLIST(binding)  // specific
+        );
+    }
+    else
+        assert(IS_VARLIST(binding));
+  #endif
+}
+
+
+inline static void Bind_Any_Word(RELVAL *v, REBNOD *act_or_ctx, REBLEN index) {
+    INIT_VAL_WORD_BINDING(v, SER(act_or_ctx));
+    INIT_VAL_WORD_PRIMARY_INDEX(v, index);
+}
+
+inline static REBVAL *Init_Any_Word_Bound_Core(
+    RELVAL *out,
+    enum Reb_Kind type,
+    const REBSYM *symbol,
+    REBCTX *context,  // spelling determined by context and index
+    REBLEN index
+){
+    Init_Any_Word_Untracked(out, type, symbol);
+    Bind_Any_Word(out, context, index);
+
+    return cast(REBVAL*, out);
+}
+
+#define Init_Any_Word_Bound(out,type,symbol,context,index) \
+    Init_Any_Word_Bound_Core( \
+        TRACK_CELL_IF_DEBUG(out), (type), (symbol), (context), (index))
+
+
 //
 // Shared routine that handles linking the patch into the context's variant
 // list, and bumping the meta out of the misc into the misc if needed.
@@ -146,7 +191,8 @@ inline static REBARR *Make_Patch_Core(
     bool reuse
 ){
     assert(kind == REB_WORD or kind == REB_SET_WORD);
-    assert(limit <= CTX_LEN(ctx));
+    REBLEN ctx_len = CTX_LEN(ctx);
+    assert(limit <= ctx_len);
 
     // 0 happens with `make object! []` and similar cases.
     //
@@ -237,7 +283,8 @@ inline static REBARR *Make_Patch_Core(
             | NODE_FLAG_MANAGED
     );
 
-    Init_Any_Word_Bound(ARR_SINGLE(patch), kind, ctx, limit);
+    const REBCAN *canon = KEY_CANON(CTX_KEY(ctx, ctx_len));
+    Init_Any_Word_Bound(ARR_SINGLE(patch), kind, canon, ctx, ctx_len);
 
     // The way it is designed, the list of patches terminates in either a
     // nullptr or a context pointer that represents the specifying frame for
