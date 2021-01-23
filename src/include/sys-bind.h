@@ -381,12 +381,6 @@ inline static REBVAL* Unrelativize(RELVAL* out, const RELVAL* v) {
     Unrelativize(Alloc_Value(), (v))
 
 
-inline static void Unbind_Any_Word(RELVAL *v) {
-    const REBSTR *spelling = VAL_WORD_SYMBOL(VAL_UNESCAPED(v));
-    INIT_VAL_WORD_BINDING(v, spelling);
-    INIT_VAL_WORD_PRIMARY_INDEX(v, 0);
-}
-
 inline static REBCTX *VAL_WORD_CONTEXT(const REBVAL *v) {
     assert(IS_WORD_BOUND(v));
     REBARR *binding = VAL_WORD_BINDING(v);
@@ -401,16 +395,17 @@ inline static REBCTX *VAL_WORD_CONTEXT(const REBVAL *v) {
     return c;
 }
 
-// When a word is bound, its spelling is derived from the context it is bound
-// to.  This means getting at the spelling will cost slightly more, but frees
-// up space in word cell for other features.  Note that this means if a
-// context is freed, its keylist must be retained to provide the words.
-//
-inline static const REBSYM *VAL_WORD_SYMBOL(REBCEL(const*) cell) {
+inline static const REBCAN *VAL_WORD_CANON(REBCEL(const*) cell) {
+    if (HEART3X_BYTE(cell) >= REB_192_ESCAPED) { // probably fastest way
+        REBCEL(const*) unescaped = VAL(VAL_NODE1(cell));
+        assert(ANY_WORD_KIND(CELL_HEART(unescaped)));
+        return Canon_Of_Symbol(SYM(BINDING(unescaped)));
+    }
+
     assert(ANY_WORD_KIND(CELL_HEART(cell)));
 
     if (IS_SYMBOL(BINDING(cell)))
-        return SYM(BINDING(cell));
+        return Canon_Of_Symbol(SYM(BINDING(cell)));  // unbound
 
     REBARR *binding = ARR(BINDING(cell));
 
@@ -427,8 +422,50 @@ inline static const REBSYM *VAL_WORD_SYMBOL(REBCEL(const*) cell) {
     return KEY_CANON(CTX_KEY(CTX(binding), VAL_WORD_INDEX(v)));
 }
 
-#define VAL_WORD_CANON(cell) \
-    Canon_Of_Symbol(VAL_WORD_SYMBOL(cell))
+// When a word is bound, its spelling is derived from the context it is bound
+// to.  This means getting at the spelling will cost slightly more, but frees
+// up space in word cell for other features.  Note that this means if a
+// context is freed, its keylist must be retained to provide the words.
+//
+inline static const REBSYM *VAL_WORD_SYMBOL(REBCEL(const*) cell) {
+    if (HEART3X_BYTE(cell) >= REB_192_ESCAPED) {
+        REBCEL(const*) unescaped = VAL(VAL_NODE1(cell));
+        assert(ANY_WORD_KIND(CELL_HEART(unescaped)));
+        return SYM(BINDING(unescaped));
+    }
+
+    assert(ANY_WORD_KIND(CELL_HEART(cell)));
+
+    if (IS_SYMBOL(BINDING(cell)))
+        return SYM(BINDING(cell));  // unbound
+
+    REBARR *binding = ARR(BINDING(cell));
+
+    // Note: inside QUOTED! cells, all words should be bound to strings.  This
+    // is because different bindings can be made at each reference site.
+    // So at this point, we can be certain the cell is a RELVAL.
+
+    const RELVAL *v = CELL_TO_VAL(cell);
+
+    const REBSYM *symbol;
+    if (IS_DETAILS(binding))  // relative
+        symbol = KEY_CANON(ACT_KEY(ACT(binding), VAL_WORD_INDEX(v)));
+    else {
+        assert(IS_VARLIST(binding));  // specific
+        symbol = KEY_CANON(CTX_KEY(CTX(binding), VAL_WORD_INDEX(v)));
+    }
+
+    // !!! This is where we'd put the stepping logic to take 0, 1, or 2
+    // steps in the synonym chain to get either canon or spelling variant.
+    //
+    return symbol;
+}
+
+inline static void Unbind_Any_Word(RELVAL *v) {
+    const REBSYM *symbol = VAL_WORD_SYMBOL(v);
+    INIT_VAL_WORD_BINDING(v, symbol);
+    INIT_VAL_WORD_PRIMARY_INDEX(v, 0);
+}
 
 inline static OPT_SYMID VAL_WORD_ID(REBCEL(const*) v) {
     assert(PG_Symbol_Canons);  // all syms are 0 prior to Init_Symbols()
@@ -868,8 +905,9 @@ inline static REBVAL *Derelativize(
         // again (as any new series are pulled out of the "wave" of binding).
         //
         // We don't want to do this with REB_QUOTED since the cache is shared.
+        // (this applies to escaped words with obscure names, too)
         //
-        if (KIND3Q_BYTE_UNCHECKED(v) != REB_QUOTED) {
+        if (not Is_Escaped_Value(v)) {
             REBCEL(const*) out_cell = cast(REBCEL(const*), out);
             INIT_VAL_WORD_CACHE(out_cell, UNSPECIFIED);
             INIT_VAL_WORD_VIRTUAL_MONDEX(out_cell, MONDEX_MOD);  // necessary?
