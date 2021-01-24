@@ -196,3 +196,16 @@
         304 = get dequote first xbox
     ]
 )
+
+(
+    abba: 304
+    obj: make object! [abba: 1020]
+    code: [ABBA 'Abba ''abbA '''aBBa ''''AbbA '''''aBba]
+    did all [
+        [1020 1020 1020 1020 1020 1020]
+            = do in obj compose [map-each x (code) [get dequote x]]
+
+        [304 304 304 304 304 304]
+            = map-each x (code) [get dequote x]
+    ]
+)

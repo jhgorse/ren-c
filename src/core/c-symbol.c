@@ -1,6 +1,6 @@
 //
-//  File: %c-word.c
-//  Summary: "symbol table and word related functions"
+//  File: %c-symbol.c
+//  Summary: "Symbol Table and Interning Functions"
 //  Section: core
 //  Project: "Rebol 3 Interpreter and Run-time (Ren-C branch)"
 //  Homepage: https://github.com/metaeducation/ren-c/
@@ -8,7 +8,7 @@
 //=////////////////////////////////////////////////////////////////////////=//
 //
 // Copyright 2012 REBOL Technologies
-// Copyright 2012-2017 Ren-C Open Source Contributors
+// Copyright 2012-2021 Ren-C Open Source Contributors
 // REBOL is a trademark of REBOL Technologies
 //
 // See README.md and CREDITS.md for more information.
@@ -21,10 +21,7 @@
 //
 //=////////////////////////////////////////////////////////////////////////=//
 //
-// In R3-Alpha, words were not garbage collected, and their UTF-8 data was
-// kept in a separate table from the REBSERs.  In Ren-C, words use REBSERs,
-// and are merely *indexed* by hashes of their canon forms via an external
-// table.  This table grows and shrinks as canons are added and removed.
+// See %sys-symbol.h for comments.
 //
 
 #include "sys-core.h"
@@ -32,11 +29,7 @@
 #define WORD_TABLE_SIZE 1024  // initial size in words
 
 
-//
-// Prime numbers used for hash table sizes. Divide by 2 for
-// number of words that can be held in the symbol table.
-//
-static REBLEN const Primes[] =
+static REBLEN const Primes[] =  // Prime numbers used for hash table sizes
 {
     7,
     13,
@@ -74,13 +67,13 @@ static REBLEN const Primes[] =
 
 
 //
-//  Try_Get_Hash_Prime: C
+//  Try_Get_Larger_Or_Equal_Prime: C
 //
-// Given a value, return a prime number that is larger or equal.
+// Return a prime larger or equal to the passed in value, or 0 if too big.
 //
-REBINT Try_Get_Hash_Prime(REBLEN minimum)
+uint32_t Try_Get_Larger_Or_Equal_Prime(uint32_t minimum)
 {
-    REBINT n = 0;
+    uint_fast32_t n = 0;
     while (minimum > Primes[n]) {
         ++n;
         if (Primes[n] == 0)
@@ -92,12 +85,15 @@ REBINT Try_Get_Hash_Prime(REBLEN minimum)
 
 
 //
-//  Get_Hash_Prime_May_Fail: C
+//  Get_Larger_Or_Equal_Prime_May_Fail: C
 //
-REBINT Get_Hash_Prime_May_Fail(REBLEN minimum)
+// Return a prime larger or equal to the input value, unless such a prime is
+// out of range of the built-in Primes table--in which case raise an error.
+//
+uint32_t Get_Larger_Or_Equal_Prime_May_Fail(uint32_t minimum)
 {
-    REBINT prime = Try_Get_Hash_Prime(minimum);
-    if (prime == 0) {  // larger than hash prime table
+    uint32_t prime = Try_Get_Larger_Or_Equal_Prime(minimum);
+    if (prime == 0) {
         DECLARE_LOCAL (temp);
         Init_Integer(temp, minimum);
         fail (Error_Size_Limit_Raw(temp));
@@ -120,13 +116,17 @@ static REBSTR PG_Deleted_Symbol;
 
 
 //
-//  Expand_Word_Table: C
+//  Expand_Symbol_Canons_Table: C
 //
-// Expand the hash table part of the word_table by allocating
-// the next larger table size and rehashing all the words of
+// Expand the hash table for quickly mapping UTF-8 text to the canon symbol.
+// Allocate the next larger table size in Primes and rehash all the words of
 // the current table.  Free the old hash array.
 //
-static void Expand_Word_Table(void)
+// !!! Because R3-Alpha did not GC symbols, this table would never shrink.
+// A similar process could reclaim space when it's seen as having too much
+// excess capacity.
+//
+static void Expand_Symbol_Canons_Table(void)
 {
     // The only full list of symbol words available is the old hash table.
     // Hold onto it while creating the new hash table.
@@ -134,7 +134,7 @@ static void Expand_Word_Table(void)
     REBLEN old_num_slots = SER_USED(PG_Canons_By_Hash);
     REBSTR* *old_canons_by_hash = SER_HEAD(REBSTR*, PG_Canons_By_Hash);
 
-    REBLEN num_slots = Get_Hash_Prime_May_Fail(old_num_slots + 1);
+    REBLEN num_slots = Get_Larger_Or_Equal_Prime_May_Fail(old_num_slots + 1);
     assert(SER_WIDE(PG_Canons_By_Hash) == sizeof(REBSTR*));
 
     REBSER *ser = Make_Series(
@@ -181,6 +181,8 @@ static void Expand_Word_Table(void)
 }
 
 
+// Helper routine for Intern_UTF8_Managed()
+//
 inline static REBSYM *Make_Canon(
     bool *was_lowercase,  // returns true if the input data itself was canon
     const REBYTE *utf8,
@@ -298,7 +300,7 @@ const REBSYM *Intern_UTF8_Managed(const REBYTE *utf8, size_t size)
     //
     REBLEN num_slots = SER_USED(PG_Canons_By_Hash);
     if (PG_Num_Canon_Slots_In_Use > num_slots / 2) {
-        Expand_Word_Table();
+        Expand_Symbol_Canons_Table();
         num_slots = SER_USED(PG_Canons_By_Hash);  // got larger
     }
 
@@ -477,9 +479,8 @@ const REBSYM *Intern_UTF8_Managed(const REBYTE *utf8, size_t size)
 //
 //  GC_Kill_Interning: C
 //
-// Unlink this spelling out of the circularly linked list of synonyms.
-// Further, if it happens to be canon, we need to re-point everything in the
-// chain to a new entry.  Choose the synonym as a new canon if so.
+// Unlink this symbol out of the circularly linked list of synonyms.
+// If it is a canon then remove its entry from the canons hash table as well.
 //
 void GC_Kill_Interning(REBSYM *intern)
 {
@@ -585,7 +586,7 @@ void Startup_Interning(void)
 
     REBLEN n;
   #if defined(NDEBUG)
-    n = Get_Hash_Prime_May_Fail(WORD_TABLE_SIZE * 4);  // *4 reduces rehashing
+    n = Get_Larger_Or_Equal_Prime_May_Fail(WORD_TABLE_SIZE * 4);
   #else
     n = 1; // forces exercise of rehashing logic in debug build
   #endif
@@ -610,7 +611,7 @@ void Startup_Interning(void)
 // other things in a way not too dissimilar from `+`.
 //
 // The compromise used is to make `/` be a cell whose VAL_TYPE() is REB_PATH,
-// but whose CELL_KIND() is REB_WORD with the special spelling `-1-SLASH-`.
+// but whose CELL_HEART() is REB_WORD with the special spelling `-1-SLASH-`.
 // Binding mechanics and evaluator behavior are based on this unusual name.
 // But when inspected by the user, it appears to be a PATH! with 2 blanks.
 //

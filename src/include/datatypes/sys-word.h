@@ -31,42 +31,6 @@
 //
 
 
-// REBCTX types use this field of their varlist (which is the identity of
-// an ANY-CONTEXT!) to find their "keylist".  It is stored in the REBSER
-// node of the varlist REBARR vs. in the REBVAL of the ANY-CONTEXT! so
-// that the keylist can be changed without needing to update all the
-// REBVALs for that object.
-//
-// It may be a simple REBARR* -or- in the case of the varlist of a running
-// FRAME! on the stack, it points to a REBFRM*.  If it's a FRAME! that
-// is not running on the stack, it will be the function paramlist of the
-// actual phase that function is for.  Since REBFRM* all start with a
-// REBVAL cell, this means NODE_FLAG_CELL can be used on the node to
-// discern the case where it can be cast to a REBFRM* vs. REBARR*.
-//
-// (Note: FRAME!s used to use a field `misc.f` to track the associated
-// frame...but that prevented the ability to SET-META on a frame.  While
-// that feature may not be essential, it seems awkward to not allow it
-// since it's allowed for other ANY-CONTEXT!s.  Also, it turns out that
-// heap-based FRAME! values--such as those that come from MAKE FRAME!--
-// have to get their keylist via the specifically applicable ->phase field
-// anyway, and it's a faster test to check this for NODE_FLAG_CELL than to
-// separately extract the CTX_TYPE() and treat frames differently.)
-//
-// It is done as a base-class REBNOD* as opposed to a union in order to
-// not run afoul of C's rules, by which you cannot assign one member of
-// a union and then read from another.
-//
-#define LINK_KeySource_TYPE         REBNOD*
-#define LINK_KeySource_CAST         NOD
-#define HAS_LINK_KeySource          FLAVOR_VARLIST
-
-inline static void INIT_LINK_KEYSOURCE(REBARR *varlist, REBNOD *keysource) {
-    if (not Is_Node_Cell(keysource))
-        assert(IS_KEYLIST(SER(keysource)));
-    mutable_LINK(KeySource, varlist) = keysource;
-}
-
 inline static REBLEN VAL_WORD_PRIMARY_INDEX(RELVAL *v) {
     assert(ANY_WORD_KIND(CELL_KIND(VAL_UNESCAPED(v))));
     return VAL_WORD_PRIMARY_INDEX_UNCHECKED(v);
@@ -138,10 +102,3 @@ inline static REBVAL *Init_Any_Word_Untracked(
 #define Init_Get_Word(out,str)      Init_Any_Word((out), REB_GET_WORD, (str))
 #define Init_Set_Word(out,str)      Init_Any_Word((out), REB_SET_WORD, (str))
 #define Init_Sym_Word(out,str)      Init_Any_Word((out), REB_SYM_WORD, (str))
-
-
-// Helper calls strsize() so you can more easily use literals at callsite.
-// (Better to call Intern_UTF8_Managed() with the size if you know it.)
-//
-inline static const REBSTR *Intern_Unsized_Managed(const char *utf8)
-  { return Intern_UTF8_Managed(cb_cast(utf8), strsize(utf8)); }

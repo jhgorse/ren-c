@@ -73,6 +73,26 @@
 //
 
 
+// It is desirable to be able to quickly navigate from the varlist of a
+// running FRAME! to the REBFRM* for it.  However, pointers are in short
+// supply.  So while a frame is running, the LINK() spot ordinarily used for
+// the keylist holds the REBFRM* instead.  Keys can then be found from the
+// running phase.
+//
+// Note: This takes advantage of the fact that REBFRM* distinguishes itself
+// using different NODE_FLAG_XXX from a REBSER*.  Currently it lies and says
+// it is a cell as the signal, which is distinct from what a keylist says.
+//
+#define LINK_KeySource_TYPE         REBNOD*
+#define LINK_KeySource_CAST         NOD
+#define HAS_LINK_KeySource          FLAVOR_VARLIST
+
+inline static void INIT_LINK_KEYSOURCE(REBARR *varlist, REBNOD *keysource) {
+    if (not Is_Node_Cell(keysource))
+        assert(IS_KEYLIST(SER(keysource)));
+    mutable_LINK(KeySource, varlist) = keysource;
+}
+
 
 // The method for generating system indices isn't based on LOAD of an object,
 // because the bootstrap Rebol may not have a compatible scanner.  So it uses

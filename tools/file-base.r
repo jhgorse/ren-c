@@ -76,8 +76,8 @@ core: [
     c-path.c
     c-port.c
     c-signal.c
+    c-symbol.c
     c-value.c
-    c-word.c
 
     ; (D)ebug
     d-crash.c

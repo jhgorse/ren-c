@@ -231,7 +231,7 @@ void Expand_Hash(REBSER *ser)
 {
     assert(not IS_SER_ARRAY(ser));
 
-    REBINT prime = Get_Hash_Prime_May_Fail(SER_USED(ser) + 1);
+    REBINT prime = Get_Larger_Or_Equal_Prime_May_Fail(SER_USED(ser) + 1);
     Remake_Series(
         ser,
         prime + 1,

@@ -429,7 +429,9 @@ uint32_t Hash_Value(const RELVAL *v)
 //
 REBSER *Make_Hash_Series(REBLEN len)
 {
-    REBLEN n = Get_Hash_Prime_May_Fail(len * 2);  // best when 2X # of keys
+    // "Ideal hashing size is when there are twice as many slots as keys."
+    //
+    REBLEN n = Get_Larger_Or_Equal_Prime_May_Fail(len * 2);
     REBSER *ser = Make_Series(n + 1, FLAG_FLAVOR(HASHLIST));
     Clear_Series(ser);
     SET_SERIES_LEN(ser, n);
