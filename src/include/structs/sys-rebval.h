@@ -380,11 +380,6 @@ struct Reb_Date_Extra  // see %sys-time.h
     REBYMD ymdz;  // month/day/year/zone (time payload *may* hold nanoseconds) 
 };
 
-struct Reb_Typeset_Extra  // see %sys-typeset.h
-{
-    uint_fast32_t high_bits;  // 64 typeflags, can't all fit in payload second
-};
-
 union Reb_Any {  // needed to beat strict aliasing, used in payload
     bool flag;  // "wasteful" to just use for one flag, but fast to read/write
 
@@ -436,7 +431,6 @@ union Reb_Value_Extra { //=/////////////////// ACTUAL EXTRA DEFINITION ////=//
     const REBNOD *Binding;  // see %sys-bind.h
     struct Reb_Datatype_Extra Datatype;
     struct Reb_Date_Extra Date;
-    struct Reb_Typeset_Extra Typeset;
 
     union Reb_Any Any;
     union Reb_Bytes_Extra Bytes;

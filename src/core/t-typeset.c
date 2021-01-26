@@ -133,7 +133,7 @@ bool Add_Typeset_Bits_Core(
     const RELVAL *tail,
     REBSPC *specifier
 ) {
-    assert(IS_TYPESET(typeset));
+    assert(IS_PARAM(typeset) or IS_TYPESET(typeset));
 
     const RELVAL *maybe_word = head;
     for (; maybe_word != tail; ++maybe_word) {
@@ -205,7 +205,7 @@ bool Add_Typeset_Bits_Core(
                 // `@arg` notation is used), but the native specs are loaded
                 // by a boostrap r3 that can't read them.
                 //
-                VAL_TYPESET_PARAM_CLASS_U32(typeset) = REB_P_MODAL;
+                Symify(typeset);
             }
         }
         else if (IS_DATATYPE(item)) {
@@ -347,6 +347,11 @@ REBARR *Typeset_To_Array(const REBVAL *tset)
 //
 void MF_Typeset(REB_MOLD *mo, REBCEL(const*) v, bool form)
 {
+    DECLARE_LOCAL (temp);
+    Init_Block(temp, ARR(VAL_NODE1(v)));
+    MF_Array(mo, temp, form);
+
+
     REBINT n;
 
     if (not form) {

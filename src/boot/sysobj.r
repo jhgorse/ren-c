@@ -194,7 +194,6 @@ standard: make object! [
     ;
     action-meta: make object! [
         description:
-        parameter-types:
         parameter-notes:
             null
     ]

@@ -23,7 +23,7 @@ spec-of: function [
     return collect [
         keep/line ensure [<opt> text!] select meta 'description
 
-        types: ensure [<opt> frame! object!] select meta 'parameter-types
+        types: as frame! :action
         notes: ensure [<opt> frame! object!] select meta 'parameter-notes
 
         return-type: ensure [<opt> block!] select try types 'return
@@ -346,9 +346,21 @@ help: function [
 
     print-args: function [list /indent-words] [
         for-each param list [
-            type: ensure [<opt> block!] (
-                select try meta/parameter-types to-word dequote param
-            )
+            ;
+            ; The TYPE you extract from the FRAME! alias is a block decorated
+            ; with parameter information.
+            ;
+            type: select as frame! :value to-word dequote param
+            if quoted? type [
+                type: dequote type
+            ]
+            if path? type [
+                type: type/2
+            ]
+            if empty? type [
+                type: null
+            ]
+
             note: ensure [<opt> text!] (
                 select try meta/parameter-notes to-word dequote param
             )
@@ -364,7 +376,7 @@ help: function [
     ; that isn't intended for use as a definitional return is a return type.
     ; The concepts are still being fleshed out.
     ;
-    return-type: select try meta/parameter-types 'return
+    return-type: select as frame! :value 'return
     return-note: select try meta/parameter-notes 'return
 
     print newline

@@ -147,7 +147,6 @@ REBNATIVE(lambda)
     //
     Init_Void(DS_PUSH(), SYM_VOID);  // key slot (signal for no pushes)
     Init_Unreadable_Void(DS_PUSH());  // unused
-    Init_Unreadable_Void(DS_PUSH());  // unused
     Init_Nulled(DS_PUSH());  // description slot
 
     for (; word != word_tail; ++word) {
@@ -156,9 +155,8 @@ REBNATIVE(lambda)
 
         Init_Word(DS_PUSH(), VAL_WORD_SYMBOL(word));
 
-        Init_Typeset(DS_PUSH(), TS_OPT_VALUE);
+        Init_Typeset(DS_PUSH(), TS_OPT_VALUE);  // !!! TBD: push <opt> value
 
-        Init_Nulled(DS_PUSH());  // types (not supported)
         Init_Nulled(DS_PUSH());  // notes (not supported)
     }
 

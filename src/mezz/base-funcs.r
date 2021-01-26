@@ -372,7 +372,6 @@ redescribe: func [
 
             description: meta/description: fields/description
             notes: meta/parameter-notes: fields/parameter-notes
-            types: meta/parameter-types: fields/parameter-types
         ]
     ]
 

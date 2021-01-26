@@ -272,14 +272,6 @@ inherit-meta: func* [
                 ]
             ]
         ]
-        if select m1 'parameter-types [  ; shallow copy, but make frame match
-            m2/parameter-types: make frame! :derived
-            for-each [key value] m1/parameter-types [
-                if in m2/parameter-types key [
-                    m2/parameter-types/(key): get* 'value  ; !!! VOID!s
-                ]
-            ]
-        ]
     ]
     return get 'derived  ; no :derived name cache
 ]

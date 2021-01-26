@@ -1040,7 +1040,6 @@ REBCTX *Error_Not_Varargs(
     DECLARE_LOCAL (honest_param);
     Init_Param(
         honest_param,
-        REB_P_NORMAL,
         FLAGIT_KIND(REB_VARARGS) // actually expected
     );
     UNUSED(honest_param);  // !!! pass to Error_Arg_Type(?)

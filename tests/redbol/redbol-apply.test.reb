@@ -5,53 +5,75 @@
     action [action!]
     block [block!]
     /only
-    <local> arg frame params using-args
+    <local> types arg key frame params mode
 ][
-    frame: make frame! :action
-    params: parameters of :action
-    using-args: true
+    types: as frame! :action  ; exemplar of types
+    frame: make frame! :action  ; frame we are building
+    params: parameters of :action  ; ordered list of parameters
+    mode: <normal>
 
-    while [not tail? block] [
-        block: if only [
-            arg: get* 'block/1
-            try next block
-        ] else [
-            ; Skip comments and other invisibles.
-            ; (note: could be result IF when `until .not.quoted? [...]`
-            ;
-            until [not quoted? [block arg]: evaluate block]
-            try block
-        ]
-
-        if refinement? params/1 [
-            comment {
-                Ren-C allows LOGIC! to control parameterless refinements and
-                canonizes to either null or the refinement name itself.  But
-                it does not allow BLANK!.  This makes a BLOCK!-style apply
-                using positions non-viable.  We OPT all nones here.
-            }
-            using-args: did set (in frame second params/1) opt get* 'arg
-        ] else [
-            if using-args [
-                set (in frame params/1) get* 'arg
+    ; Rebol2 and R3-Alpha APPLY would fill in NONE for any parameters that
+    ; were not provided in the apply block:
+    ;
+    ;     rebol2/r3-alpha>> apply func [a b c] [reduce [a b c]] []
+    ;     == [none none none]
+    ;
+    ; This means we need to enumerate and fill in the frame as long as there
+    ; are parameters--not as long as there are block values.
+    ;
+    while [not tail? params] [
+        case [
+            not block [
+                arg: null  ; could also do BLANK! if no more block data
+            ]
+            only [  ; /ONLY means do not evaluate arguments
+                arg: get/any 'block/1
+                block: next block
+            ]
+            true [  ; evaluate (skipping comments and other invisibles)
+                until .not.quoted? [[block arg]: evaluate block]
             ]
         ]
 
-        params: try next params
+        key: to word! dequote params/1
+        all [
+            refinement? params/1
+            elide if not block [break]  ; done if refinements w/no more block
+            mode = <normal>
+        ] then [
+            mode: if arg [#]  ; set mode to either use or don't use next arg
+            if empty? second pick types key [  ; no-arg refine...
+                set (in frame key) mode  ; ...must be # or NULL
+            ] else [
+                continue  ; keep param on the refinement, get next arg
+            ]
+        ] else [
+            if mode [  ; normal or # case will set
+                set (in frame key) get/any 'arg
+            ]
+        ]
+
+        mode: <normal>
+        params: next params
     ]
 
+    ; Too many arguments was not a problem for R3-alpha's APPLY, it would
+    ; evaluate them all even if not used by the function.  It may or may not
+    ; be better to have it be an error.
+    ;
+    ; https://github.com/metaeducation/rebol-issues/issues/2237
+    ;
     comment [
-        {Too many arguments was not a problem for R3-alpha's APPLY, it
-        would evaluate them all even if not used by the function.  It
-        may or may not be better to have it be an error.}
-
-        if not tail? block [
-            fail "Too many arguments passed in R3-ALPHA-APPLY block."
+        all [block, not tail? block] then [
+            fail "Too many arguments passed in REDBOL-APPLY block."
         ]
     ]
 
-    do frame  comment {nulls are optionals}
+    print mold frame
+    do frame
 ])
+
+([a b c d e] = redbol-apply :append [[a b c] [d e f] true 2])
 
 [#44 (
     error? trap [redbol-apply 'append/only [copy [a b] 'c]]
@@ -61,9 +83,9 @@
 (null = redbol-apply func [a] [a] [])
 (null = redbol-apply/only func [a] [a] [])
 
-[#2237
-    (error? trap [redbol-apply func [a] [a] [1 2]])
-    (error? trap [redbol-apply/only func [a] [a] [1 2]])
+[#2237  ; current choice is not to error on excess arguments
+    (not error? trap [redbol-apply func [a] [a] [1 2]])
+    (not error? trap [redbol-apply/only func [a] [a] [1 2]])
 ]
 
 (error? redbol-apply :make [error! ""])
@@ -79,23 +101,25 @@
     # = redbol-apply/only func [/a] [a] [false]
 )
 (null == redbol-apply/only func [/a] [a] [])
-(use [a] [a: true # = redbol-apply func [/a] [a] [a]])
-(use [a] [a: false null == redbol-apply func [/a] [a] [a]])
-(use [a] [a: false # = redbol-apply func [/a] [a] [/a]])
-(use [a] [a: false # = redbol-apply/only func [/a] [/a] [/a]])
+
+(use [a] [a: true, # = redbol-apply func [/a] [a] [a]])
+(use [a] [a: false, null == redbol-apply func [/a] [a] [a]])
+(use [a] [a: false, # = redbol-apply func [/a] [a] [/a]])
+(use [a] [a: false, /a = redbol-apply/only func [/a] [/a] [/a]])
+
 (group! == redbol-apply/only (specialize :of [property: 'type]) [()])
 ([1] == head of redbol-apply :insert [copy [] [1] blank blank])
 ([1] == head of redbol-apply :insert [copy [] [1] blank false])
-([[1]] == head of redbol-apply :insert [copy [] [1] blank true])
+([1] == head of redbol-apply :insert [copy [] [1] blank true])
 (action! == redbol-apply (specialize :of [property: 'type]) [:print])
 (get-word! == redbol-apply/only (specialize :of [property: 'type]) [:print])
 
 [
     #1760
 
-    (1 == reeval func [] [redbol-apply does [] [return 1] 2])
+    (2 == reeval func [] [redbol-apply does [] [return 1] 2])
     (1 == reeval func [] [redbol-apply func [a] [a] [return 1] 2])
-    (1 == reeval func [] [redbol-apply does [] [return 1]])
+    (null == reeval func [] [redbol-apply does [] [1]])
     (1 == reeval func [] [redbol-apply func [a] [a] [return 1]])
     (1 == reeval func [] [redbol-apply func [a b] [a] [return 1 2]])
     (1 == reeval func [] [redbol-apply func [a b] [a] [2 return 1]])
@@ -138,7 +162,7 @@
     ][
         return get/any 'x
     ][
-        ~void~
+        '~void~
     ]
 )
 (

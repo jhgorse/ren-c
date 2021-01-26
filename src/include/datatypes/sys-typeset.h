@@ -86,17 +86,16 @@ inline static SYMID VAL_TYPE_SYM(REBCEL(const*) v) {
 // Operations when typeset is done with a bitset (currently all typesets)
 
 
-#define VAL_TYPESET_PARAM_CLASS_U32(v) \
-    PAYLOAD(Any, (v)).first.u32
-
 #define VAL_TYPESET_LOW_BITS(v) \
-    PAYLOAD(Any, (v)).second.u32
+    ARR(VAL_NODE1(v))->link.any.u32
 
 #define VAL_TYPESET_HIGH_BITS(v) \
-    EXTRA(Typeset, (v)).high_bits
+    ARR(VAL_NODE1(v))->misc.any.u32
+
+#define IS_PARAM(v) true  // !!! lie for now
 
 inline static bool TYPE_CHECK(REBCEL(const*) v, REBYTE n) {
-    assert(CELL_HEART(v) == REB_TYPESET);
+    assert(IS_PARAM(v) or CELL_HEART(v) == REB_TYPESET);
 
     if (n < 32)
         return did (VAL_TYPESET_LOW_BITS(v) & FLAGIT_KIND(n));
@@ -106,7 +105,7 @@ inline static bool TYPE_CHECK(REBCEL(const*) v, REBYTE n) {
 }
 
 inline static bool TYPE_CHECK_BITS(REBCEL(const*) v, REBU64 bits) {
-    assert(CELL_HEART(v) == REB_TYPESET);
+    assert(IS_PARAM(v) or CELL_HEART(v) == REB_TYPESET);
 
     uint_fast32_t low = bits & cast(uint32_t, 0xFFFFFFFF);
     if (low & VAL_TYPESET_LOW_BITS(v))
@@ -123,7 +122,7 @@ inline static bool TYPE_CHECK_EXACT_BITS(
     REBCEL(const*) v,
     REBU64 bits
 ){
-    assert(CELL_HEART(v) == REB_TYPESET);
+    assert(IS_PARAM(v) or CELL_HEART(v) == REB_TYPESET);
 
     uint_fast32_t low = bits & cast(uint32_t, 0xFFFFFFFF);
     if (low != VAL_TYPESET_LOW_BITS(v))
@@ -137,7 +136,7 @@ inline static bool TYPE_CHECK_EXACT_BITS(
 }
 
 inline static void TYPE_SET(RELVAL *v, REBYTE n) {
-    assert(IS_TYPESET(v));
+    assert(IS_PARAM(v) or IS_TYPESET(v));
 
     if (n < 32) {
         VAL_TYPESET_LOW_BITS(v) |= FLAGIT_KIND(n);
@@ -148,7 +147,7 @@ inline static void TYPE_SET(RELVAL *v, REBYTE n) {
 }
 
 inline static void TYPE_CLEAR(RELVAL *v, REBYTE n) {
-    assert(IS_TYPESET(v));
+    assert(IS_PARAM(v) or IS_TYPESET(v));
 
     if (n < 32) {
         VAL_TYPESET_HIGH_BITS(v) &= ~FLAGIT_KIND(n);
@@ -162,8 +161,8 @@ inline static bool EQUAL_TYPESET(
     REBCEL(const*) v1,
     REBCEL(const*) v2
 ){
-    assert(CELL_HEART(v1) == REB_TYPESET);
-    assert(CELL_HEART(v2) == REB_TYPESET);
+    assert(IS_PARAM(v1) or CELL_HEART(v1) == REB_TYPESET);
+    assert(IS_PARAM(v2) or CELL_HEART(v2) == REB_TYPESET);
 
     if (VAL_TYPESET_LOW_BITS(v1) != VAL_TYPESET_LOW_BITS(v2))
         return false;
@@ -173,7 +172,7 @@ inline static bool EQUAL_TYPESET(
 }
 
 inline static void CLEAR_ALL_TYPESET_BITS(RELVAL *v) {
-    assert(VAL_TYPE(v) == REB_TYPESET);
+    assert(IS_PARAM(v) or VAL_TYPE(v) == REB_TYPESET);
 
     VAL_TYPESET_HIGH_BITS(v) = 0;
     VAL_TYPESET_LOW_BITS(v) = 0;
@@ -260,9 +259,29 @@ inline static void CLEAR_ALL_TYPESET_BITS(RELVAL *v) {
     // character to type.
 
 
+inline static REBVAL *Refinify(REBVAL *v);  // forward declaration
+inline static bool IS_REFINEMENT(const RELVAL *v);  // forward decl
+inline static bool IS_PREDICATE(const RELVAL *v);  // forward decl
+inline static const REBCAN *VAL_REFINEMENT_CANON(REBCEL(const*) v);
+
+
 inline static enum Reb_Param_Class VAL_PARAM_CLASS(const REBPAR *param) {
-    assert(IS_TYPESET(param));
-    return cast(enum Reb_Param_Class, VAL_TYPESET_PARAM_CLASS_U32(param));
+    assert(IS_PARAM(param));
+    if (IS_QUOTED(param)) {
+        REBCEL(const*) unescaped = VAL_UNESCAPED(param);
+        if (ANY_GET_KIND(CELL_KIND(unescaped)))
+            return REB_P_MEDIUM;
+        return REB_P_HARD;
+    }
+    if (ANY_GET_KIND(VAL_TYPE(param)))
+        return REB_P_SOFT;
+    if (IS_SET_PATH(param))
+        return REB_P_RETURN;
+    if (ANY_SET_KIND(VAL_TYPE(param)))
+        return REB_P_OUTPUT;
+    if (ANY_SYM_KIND(VAL_TYPE(param)))
+        return REB_P_MODAL;
+    return REB_P_NORMAL;
 }
 
 
@@ -395,46 +414,45 @@ inline static bool Is_Param_Sealed(const REBPAR *param) {
     TYPE_CHECK((v), REB_TS_NOOP_IF_BLANK
 
 
-//=//// PARAMETER SYMBOL //////////////////////////////////////////////////=//
+//=//// PARAMETER /////////////////////////////////////////////////////////=//
 //
-// Name should be NULL unless typeset in object keylist or func paramlist
+// In R3-Alpha, functions held something called an "unword" in a slot that
+// merged together a symbol with a subtype (REFINEMENT!, GET-WORD!, LIT-WORD!)
+// to indicate what kind of parameter was.  But instead of binding information
+// it would hold the bits for a typeset.  These unwords were not exposed to
+// the user (at least not intentionally), but the typeset bits would appear
+// in a user-visible value called TYPESET!.
+//
+// Ren-C pushed the symbol out of the "parameter" type, leaving the parameter
+// class plus typeset bits to deal with.  The current general strategy is to
+// rework this idea into something representable as a single value...and
+// that this single value be fully reflectable by the user as defining the
+// parameter's type and argument gathering mode.
+//
+// How this relates to TYPESET! is not currently certain, but they're getting
+// to be more fused.
+//
 
-inline static REBVAL *Init_Typeset(RELVAL *out, REBU64 bits)
+inline static REBVAL *Init_Param_Untracked(RELVAL *out, REBU64 bits)
 {
-    RESET_CELL(out, REB_TYPESET, CELL_MASK_NONE);
-    VAL_TYPESET_PARAM_CLASS_U32(out) = REB_P_NORMAL;
+    REBARR *a = Make_Array_Core(1, NODE_FLAG_MANAGED);
+
+    Init_Block(out, a);
+
     VAL_TYPESET_LOW_BITS(out) = bits & cast(uint32_t, 0xFFFFFFFF);
     VAL_TYPESET_HIGH_BITS(out) = bits >> 32;
+
     return cast(REBVAL*, out);
 }
 
+#define Init_Param(out,bits) \
+    Init_Param_Untracked(TRACK_CELL_IF_DEBUG(out), (bits))
 
-// For the moment, a param has a cell kind that is a REB_TYPESET, but then
-// overlays an actual kind as being a pseudotype for a parameter.  This would
-// be better done with bits in the typeset node...which requires making
-// typesets more complex (the original "64 bit flags" design is insufficient
-// for a generalized typeset!)
-//
-inline static REBVAL *Init_Param_Core(
-    RELVAL *out,
-    enum Reb_Param_Class pclass,
-    REBU64 bits
-){
-    RESET_VAL_HEADER(out, REB_TYPESET, CELL_MASK_NONE);
-
-    VAL_TYPESET_PARAM_CLASS_U32(out) = pclass;
-    VAL_TYPESET_LOW_BITS(out) = bits & cast(uint32_t, 0xFFFFFFFF);
-    VAL_TYPESET_HIGH_BITS(out) = bits >> 32;
+inline static REBVAL *Init_Typeset(RELVAL *out, REBU64 bits) {
+    Init_Param(out, bits);
+    RESET_VAL_HEADER(out, REB_TYPESET, CELL_FLAG_FIRST_IS_NODE);
     return cast(REBVAL*, out);
 }
-
-#define Init_Param(out,pclass,bits) \
-    Init_Param_Core(TRACK_CELL_IF_DEBUG(out), (pclass), (bits))
-
-
-inline static REBVAL *Refinify(REBVAL *v);  // forward declaration
-inline static bool IS_REFINEMENT(const RELVAL *v);  // forward decl
-inline static bool IS_PREDICATE(const RELVAL *v);  // forward decl
 
 
 // This is an interim workaround for the need to be able check constrained
@@ -483,7 +501,7 @@ inline static bool Typecheck_Including_Constraints(
 
 
 inline static bool Is_Typeset_Empty(REBCEL(const*) param) {
-    assert(CELL_HEART(param) == REB_TYPESET);
+    assert(IS_PARAM(v) or CELL_HEART(param) == REB_TYPESET);
     REBU64 bits = VAL_TYPESET_LOW_BITS(param);
     bits |= cast(REBU64, VAL_TYPESET_HIGH_BITS(param)) << 32;
     return (bits & TS_OPT_VALUE) == 0;  // e.g. `[/refine]`

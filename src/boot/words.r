@@ -124,7 +124,6 @@ value ; used by TYPECHECKER to name the argument of the generated function
 
 ; See notes on ACTION-META in %sysobj.r
 description
-parameter-types
 parameter-notes
 
 x

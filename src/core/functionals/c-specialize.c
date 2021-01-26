@@ -365,7 +365,7 @@ bool Specialize_Action_Throws(
 
         assert(NOT_CELL_FLAG(arg, VAR_MARKED_HIDDEN));
         assert(Is_Void_With_Sym(arg, SYM_UNSET));
-        assert(IS_TYPESET(param));
+        assert(IS_PARAM(param));
         Move_Value(arg, param);
         continue;
 
@@ -423,7 +423,7 @@ bool Specialize_Action_Throws(
 
             REBVAL *slot = CTX_VAR(exemplar, VAL_WORD_INDEX(ordered));
             if (NOT_CELL_FLAG(slot, VAR_MARKED_HIDDEN)) {
-                assert(IS_TYPESET(slot));
+                assert(IS_PARAM(slot));
 
                 // It's still partial...
                 //
@@ -774,7 +774,7 @@ REBACT *Alloc_Action_From_Exemplar(
             Is_Void_With_Sym(arg, SYM_UNSET)
             and NOT_CELL_FLAG(arg, VAR_MARKED_HIDDEN)
         ){
-            assert(IS_TYPESET(param));
+            assert(IS_PARAM(param));
             Move_Value(arg, param);
             continue;
         }

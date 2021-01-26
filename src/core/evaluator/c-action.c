@@ -256,7 +256,7 @@ bool Process_Action_Maybe_Stale_Throws(REBFRM * const f)
             goto continue_fulfilling;
         }
 
-        assert(IS_TYPESET(f->param));
+        assert(IS_PARAM(f->param));
 
   //=//// CHECK FOR ORDER OVERRIDE ////////////////////////////////////////=//
 

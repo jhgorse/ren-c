@@ -111,13 +111,12 @@ enum Reb_Spec_Mode {
 };
 
 
-#define KEY_SLOT(dsp)       DS_AT((dsp) - 3)
-#define PARAM_SLOT(dsp)     DS_AT((dsp) - 2)
-#define TYPES_SLOT(dsp)     DS_AT((dsp) - 1)
+#define KEY_SLOT(dsp)       DS_AT((dsp) - 2)
+#define PARAM_SLOT(dsp)     DS_AT((dsp) - 1)
 #define NOTES_SLOT(dsp)     DS_AT(dsp)
 
 #define PUSH_SLOTS() \
-    do { DS_PUSH(); DS_PUSH(); DS_PUSH(); DS_PUSH(); } while (0)
+    do { DS_PUSH(); DS_PUSH(); DS_PUSH(); } while (0)
 
 //
 //  Push_Paramlist_Triads_May_Fail: C
@@ -213,13 +212,6 @@ void Push_Paramlist_Triads_May_Fail(
             if (IS_VOID(KEY_SLOT(DSP)))  // too early, `func [[integer!] {!}]`
                 fail (Error_Bad_Func_Def_Raw(rebUnrelativize(item)));
 
-            STKVAL(*) types = TYPES_SLOT(DSP);
-
-            if (IS_BLOCK(types))  // too many, `func [x [void!] [blank!]]`
-                fail (Error_Bad_Func_Def_Raw(rebUnrelativize(item)));
-
-            assert(IS_NULLED(types));
-
             // You currently can't say `<local> x [integer!]`, because locals
             // are hidden from the interface, and hidden values (notably
             // specialized-out values) use the `param` slot for the value,
@@ -238,6 +230,22 @@ void Push_Paramlist_Triads_May_Fail(
 
             STKVAL(*) param = PARAM_SLOT(DSP);
 
+            REBARR *a = ARR(VAL_NODE1(param));  // v-- kind of lousy test
+            if (ARR_LEN(a) != 0)  // too many, `func [x [void!] [blank!]]`
+                fail (Error_Bad_Func_Def_Raw(rebUnrelativize(item)));
+
+            DECLARE_LOCAL (specific);
+            Derelativize(specific, item, VAL_SPECIFIER(spec));
+            Modify_Array(
+                a,  // array
+                0,  // index
+                SYM_APPEND,  // mode
+                specific,  // value
+                AM_SPLICE,  // flags
+                VAL_LEN_AT(specific),  // part
+                1  // dup
+            );
+
             if (
                 GET_CELL_FLAG(param, STACK_NOTE_LOCAL)
                 and VAL_WORD_ID(KEY_SLOT(DSP)) == SYM_RETURN
@@ -246,14 +254,6 @@ void Push_Paramlist_Triads_May_Fail(
             }
 
             REBSPC* derived = Derive_Specifier(VAL_SPECIFIER(spec), item);
-            Init_Block(
-                types,
-                Copy_Array_At_Deep_Managed(
-                    VAL_ARRAY(item),
-                    VAL_INDEX(item),
-                    derived
-                )
-            );
 
             // Turn block into typeset for parameter at current index.
             // Leaves VAL_TYPESET_SYM as-is.
@@ -273,7 +273,6 @@ void Push_Paramlist_Triads_May_Fail(
             if (was_refinement)
                 TYPE_SET(param, REB_TS_REFINEMENT);
 
-            *flags |= MKF_HAS_TYPES;
             continue;
         }
 
@@ -421,7 +420,6 @@ void Push_Paramlist_Triads_May_Fail(
         PUSH_SLOTS();
 
         Init_Word(KEY_SLOT(DSP), canon);
-        Init_Nulled(TYPES_SLOT(DSP));  // may or may not add later
         Init_Nulled(NOTES_SLOT(DSP));  // may or may not add later
 
         STKVAL(*) param = PARAM_SLOT(DSP);
@@ -441,19 +439,52 @@ void Push_Paramlist_Triads_May_Fail(
             Init_Void(param, SYM_UNSET);
             SET_CELL_FLAG(param, STACK_NOTE_LOCAL);
         }
+        else if (pclass == REB_P_RETURN) {
+            Init_Param(
+                param,
+                FLAGIT_KIND(REB_TS_REFINEMENT)
+            );
+            Refinify(param);
+            Setify(param);
+        }
         else if (refinement) {
             Init_Param(
                 param,
-                pclass,
                 FLAGIT_KIND(REB_TS_REFINEMENT)  // must preserve if type block
             );
+            if (pclass != REB_P_OUTPUT)
+                Refinify(param);  // reserve for the main RETURN for now
         }
         else
             Init_Param(
                 param,
-                pclass,
                 TS_OPT_VALUE  // By default <opt> ANY-VALUE! is legal
             );
+
+        switch (pclass) {
+          case REB_P_SOFT:
+            Getify(param);
+            break;
+
+          case REB_P_MEDIUM:
+            Quotify(Getify(param), 1);
+            break;
+
+          case REB_P_HARD:
+            Quotify(param, 1);
+            break;
+
+          case REB_P_MODAL:
+            Symify(param);
+            break;
+
+          case REB_P_OUTPUT:
+            Setify(param);
+            break;
+
+          default:
+            break;
+        }
 
         // All these would cancel a definitional return (leave has same idea):
         //
@@ -520,13 +551,12 @@ REBARR *Pop_Paramlist_With_Meta_May_Fail(
             //
             Init_Param(
                 param,
-                REB_P_RETURN,
                 TS_OPT_VALUE
                     | FLAGIT_KIND(REB_TS_INVISIBLE)  // return @() intentional
                     | FLAGIT_KIND(REB_TS_REFINEMENT)  // need slot for types
             );
-
-            Init_Nulled(TYPES_SLOT(DSP));
+            Refinify(param);  // trust set-path will make it return like
+            Setify(param);
             Init_Nulled(NOTES_SLOT(DSP));
         }
         else {
@@ -543,8 +573,8 @@ REBARR *Pop_Paramlist_With_Meta_May_Fail(
 
     // Slots, which is length +1 (includes the rootvar or rootparam)
     //
-    assert((DSP - dsp_orig) % 4 == 0);
-    REBLEN num_slots = (DSP - dsp_orig) / 4;
+    assert((DSP - dsp_orig) % 3 == 0);
+    REBLEN num_slots = (DSP - dsp_orig) / 3;
 
     // Must make the function "paramlist" even if "empty", for identity.
     //
@@ -597,8 +627,8 @@ REBARR *Pop_Paramlist_With_Meta_May_Fail(
         ++param;
     }
 
-    REBDSP dsp = dsp_orig + 8;
-    for (; dsp <= DSP; dsp += 4) {
+    REBDSP dsp = dsp_orig + 6;
+    for (; dsp <= DSP; dsp += 3) {
         const REBCAN *canon = VAL_WORD_CANON(KEY_SLOT(dsp));
 
         STKVAL(*) slot = PARAM_SLOT(dsp);
@@ -663,7 +693,7 @@ REBARR *Pop_Paramlist_With_Meta_May_Fail(
 
     // !!! See notes on ACTION-META in %sysobj.r
 
-    if (flags & (MKF_HAS_DESCRIPTION | MKF_HAS_TYPES | MKF_HAS_NOTES))
+    if (flags & (MKF_HAS_DESCRIPTION | MKF_HAS_NOTES))
         *meta = Copy_Context_Shallow_Managed(VAL_CONTEXT(Root_Action_Meta));
     else
         *meta = nullptr;
@@ -672,50 +702,11 @@ REBARR *Pop_Paramlist_With_Meta_May_Fail(
     // slot, the third cell we pushed onto the stack.  Extract it if so.
     //
     if (flags & MKF_HAS_DESCRIPTION) {
-        STKVAL(*) description = NOTES_SLOT(dsp_orig + 4);
+        STKVAL(*) description = NOTES_SLOT(dsp_orig + 3);
         assert(IS_TEXT(description));
         Move_Value(
             CTX_VAR(*meta, STD_ACTION_META_DESCRIPTION),
             description
-        );
-    }
-
-    // Only make `parameter-types` if there were blocks in the spec
-    //
-    if (flags & MKF_HAS_TYPES) {
-        REBARR *types_varlist = Make_Array_Core(
-            num_slots,
-            SERIES_MASK_VARLIST | NODE_FLAG_MANAGED
-        );
-        mutable_MISC(VarlistMeta, types_varlist) = nullptr;
-        mutable_BONUS(Patches, types_varlist) = nullptr;
-        INIT_CTX_KEYLIST_SHARED(CTX(types_varlist), keylist);
-
-        RELVAL *rootvar = ARR_HEAD(types_varlist);
-        INIT_VAL_CONTEXT_ROOTVAR(rootvar, REB_OBJECT, types_varlist);
-
-        REBVAL *dest = SPECIFIC(rootvar) + 1;
-        const RELVAL *param = ARR_AT(paramlist, 1);
-
-        REBDSP dsp = dsp_orig + 8;
-        for (; dsp <= DSP; dsp += 4) {
-            STKVAL(*) types = TYPES_SLOT(dsp);
-            assert(IS_NULLED(types) or IS_BLOCK(types));
-
-            Move_Value(dest, types);
-            if (GET_CELL_FLAG(param, VAR_MARKED_HIDDEN))
-                SET_CELL_FLAG(dest, VAR_MARKED_HIDDEN);
-
-            ++dest;
-            ++param;
-        }
-        assert(IS_END(param));
-
-        SET_SERIES_LEN(types_varlist, num_slots);
-
-        Init_Object(
-            CTX_VAR(*meta, STD_ACTION_META_PARAMETER_TYPES),
-            CTX(types_varlist)
         );
     }
 
@@ -736,8 +727,8 @@ REBARR *Pop_Paramlist_With_Meta_May_Fail(
         const RELVAL *param = ARR_AT(paramlist, 1);
         REBVAL *dest = SPECIFIC(rootvar) + 1;
 
-        REBDSP dsp = dsp_orig + 8;
-        for (; dsp <= DSP; dsp += 4) {
+        REBDSP dsp = dsp_orig + 6;
+        for (; dsp <= DSP; dsp += 3) {
             STKVAL(*) notes = NOTES_SLOT(dsp);
             assert(IS_TEXT(notes) or IS_NULLED(notes));
 
@@ -826,7 +817,6 @@ REBARR *Make_Paramlist_Managed_May_Fail(
     //
     Init_Void(KEY_SLOT(DSP), SYM_VOID);  // signal for no parameters pushed
     Init_Unreadable_Void(PARAM_SLOT(DSP));  // not used at all
-    Init_Unreadable_Void(TYPES_SLOT(DSP));  // not used at all
     Init_Nulled(NOTES_SLOT(DSP));  // overwritten if description
 
     // The process is broken up into phases so that the spec analysis code

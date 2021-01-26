@@ -291,7 +291,7 @@ enum {
     // that don't have any.
     //
     MKF_HAS_DESCRIPTION = 1 << 3,
-    MKF_HAS_TYPES = 1 << 4,
+    MKF_4 = 1 << 4,
     MKF_HAS_NOTES = 1 << 5,
 
     // These flags are also set during the spec analysis process.

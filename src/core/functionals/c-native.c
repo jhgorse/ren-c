@@ -192,12 +192,12 @@ REBVAL *Make_Native(
 // that this manual construction actually matches the definition in the file.
 //
 static void Init_Action_Meta_Shim(void) {
-    SYMID field_syms[3] = {
-        SYM_DESCRIPTION, SYM_PARAMETER_TYPES, SYM_PARAMETER_NOTES
+    SYMID field_syms[2] = {
+        SYM_DESCRIPTION, SYM_PARAMETER_NOTES
     };
-    REBCTX *meta = Alloc_Context_Core(REB_OBJECT, 4, NODE_FLAG_MANAGED);
+    REBCTX *meta = Alloc_Context_Core(REB_OBJECT, 3, NODE_FLAG_MANAGED);
     REBLEN i = 1;
-    for (; i != 4; ++i)
+    for (; i != 3; ++i)
         Init_Nulled(Append_Context(meta, nullptr, Canon(field_syms[i - 1])));
 
     Root_Action_Meta = Init_Object(Alloc_Value(), meta);

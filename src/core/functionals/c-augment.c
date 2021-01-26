@@ -89,13 +89,12 @@ REBNATIVE(augment_p)  // see extended definition AUGMENT in %base-defs.r
     //
     Init_Void(DS_PUSH(), SYM_VOID);  // key slot (signal for no pushes)
     Init_Unreadable_Void(DS_PUSH());  // unused
-    Init_Unreadable_Void(DS_PUSH());  // unused
     Init_Nulled(DS_PUSH());  // description slot
 
     REBFLGS flags = MKF_KEYWORDS;
     if (ACT_HAS_RETURN(augmentee)) {
         flags |= MKF_RETURN;
-        definitional_return_dsp = DSP + 4;
+        definitional_return_dsp = DSP + 3;
     }
 
     // For each parameter in the original function, we push a corresponding
@@ -112,7 +111,6 @@ REBNATIVE(augment_p)  // see extended definition AUGMENT in %base-defs.r
         if (Is_Param_Hidden(param))  // !!! This should hide locals
             SET_CELL_FLAG(DS_TOP, STACK_NOTE_LOCAL);
 
-        Init_Nulled(DS_PUSH());  // types (inherits via INHERIT-META)
         Init_Nulled(DS_PUSH());  // notes (inherits via INHERIT-META)
     }
   }
