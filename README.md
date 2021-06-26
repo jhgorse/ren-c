@@ -16,7 +16,7 @@ While Rebol 3 built for many platforms, Ren-C extends those to everything from
 [OpenBSD to HaikuOS and WebAssembly][5].  But the experimental nature of the
 project and limited resources mean there isn't support for packaging and
 distribution of native binaries.  So the table stakes for participating is
-building your own native interpreter (see instructions below)
+building your own native interpreter (see instructions below).
 
 [5]: https://github.com/metaeducation/ren-c/blob/master/tools/systems.r#L55
 
@@ -81,6 +81,15 @@ such as Rebol itself.
 
 
 ## Building
+
+1. Clone the repository.
+2. Run the build script, `make.sh`.
+3. Find the executable interpreter `build/r3`.
+
+The `make.sh` build script will attempt to bootstrap the uninitiated rebol system with prebuilt binaries necessary to run the `make.r` build script.
+
+
+### Advanced Building
 
 The system does not require GNU Make, CMake, or any other make tools.  It only
 needs a copy of a Ren-C executable to build itself.  To do a full build, it
